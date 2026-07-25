@@ -1,30 +1,32 @@
+// ICPS/types/index.ts
+
 export type FloorNumber = 1 | 2 | 3;
 
 export interface Position {
-  x: number; 
+  x: number; // pixel position on floor plan image
   y: number;
   floor: FloorNumber;
-  confidence: number; 
+  confidence: number; // 0-100
   timestamp: number;
 }
 
 export interface Room {
   id: string;
-  name: string;
+  name: string; // e.g. "Lab 201"
   floor: FloorNumber;
 }
 
 export interface NetworkReading {
   id: string;
   name: string;
-  rssi: number; 
+  rssi: number; // signal strength in dBm, e.g. -65
 }
 
 export type MockScenarioId = 'lab_201' | 'hall_1f' | 'physics' | 'edge_case';
 
 export interface MockScenario {
   id: MockScenarioId;
-  label: string; 
+  label: string; // e.g. "Inject: Lab 201"
   position: Position;
   networks: NetworkReading[];
 }
