@@ -1,5 +1,7 @@
 {
   "dependencies": {
-    "@react-navigation/native": "^7.3.14"
+    "@react-navigation/native": "^7.3.14",
+    "react": "^19.2.8",
+    "react-native": "^0.86.0"
   }
 }
