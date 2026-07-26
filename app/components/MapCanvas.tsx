@@ -10,6 +10,7 @@ import { FloorNumber } from '../types';
 // Floor plan images live in assets/floor_plans/ per Appendix C.
 // Swap these requires for your actual exported images.
 const FLOOR_PLAN_IMAGES: Record<FloorNumber, ImageSourcePropType | null> = {
+  0: null, // require('../assets/floor_plans/floor_ground.png')
   1: null, // require('../assets/floor_plans/floor_1.png')
   2: null, // require('../assets/floor_plans/floor_2.png')
   3: null, // require('../assets/floor_plans/floor_3.png')
@@ -24,22 +25,34 @@ interface MapCanvasProps {
 
 export default function MapCanvas({ floor, pinX, pinY, isPinStale = false }: MapCanvasProps) {
   const opacity = useRef(new Animated.Value(1)).current;
+  const scale = useRef(new Animated.Value(0.97)).current;
   const [imageFailed, setImageFailed] = useState(false);
   const source = FLOOR_PLAN_IMAGES[floor];
 
   useEffect(() => {
     opacity.setValue(0);
-    Animated.timing(opacity, {
-      toValue: 1,
-      duration: animations.floorChangeMs,
-      useNativeDriver: true,
-    }).start();
+    scale.setValue(0.97);
+    Animated.parallel([
+      Animated.timing(opacity, {
+        toValue: 1,
+        duration: animations.floorChangeMs + 100,
+        useNativeDriver: true,
+      }),
+      Animated.spring(scale, {
+        toValue: 1,
+        useNativeDriver: true,
+        friction: 9,
+        tension: 60,
+      }),
+    ]).start();
     setImageFailed(false);
-  }, [floor, opacity]);
+  }, [floor, opacity, scale]);
 
   return (
     <View style={styles.container}>
-      <Animated.View style={[styles.imageWrapper, { opacity }]}>
+      <Animated.View
+        style={[styles.imageWrapper, { opacity, transform: [{ scale }] }]}
+      >
         {source && !imageFailed ? (
           <Animated.Image
             source={source}
@@ -50,6 +63,7 @@ export default function MapCanvas({ floor, pinX, pinY, isPinStale = false }: Map
           />
         ) : (
           <View style={styles.placeholder}>
+            <View style={styles.placeholderIcon} />
             <Text style={styles.placeholderText}>Floor plan unavailable</Text>
           </View>
         )}
@@ -69,6 +83,8 @@ const styles = StyleSheet.create({
   },
   imageWrapper: {
     flex: 1,
+    borderRadius: 16,
+    overflow: 'hidden',
   },
   image: {
     width: '100%',
@@ -79,10 +95,21 @@ const styles = StyleSheet.create({
     backgroundColor: colors.secondaryButtonBg,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 8,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderStyle: 'dashed',
+  },
+  placeholderIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: colors.disabled,
+    marginBottom: 12,
   },
   placeholderText: {
     color: colors.textSecondary,
     fontSize: 14,
+    fontWeight: '500',
   },
 });
