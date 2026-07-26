@@ -5,8 +5,12 @@ import { MockScenario, Position } from '../types';
 import { getMockScenario } from '../services/mockDataService';
 
 export function useMockMode() {
-  const [isMockMode, setIsMockMode] = useState(false);
-  const [activeScenario, setActiveScenario] = useState<MockScenario | null>(null);
+  // Defaults to ON: there's no real backend yet, so the app should be
+  // usable out of the box for demos and screen development.
+  const [isMockMode, setIsMockMode] = useState(true);
+  const [activeScenario, setActiveScenario] = useState<MockScenario | null>(
+    getMockScenario('ground')
+  );
 
   const toggleMockMode = useCallback(() => {
     setIsMockMode((prev) => !prev);
