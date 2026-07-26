@@ -1,12 +1,22 @@
 // ICPS/services/mockDataService.ts
 
-import { MockScenario, Position, NetworkReading } from '../types';
+import { MockScenario, Position } from '../types';
 
 function now() {
   return Date.now();
 }
 
 const mockScenarios: Record<MockScenario['id'], MockScenario> = {
+  ground: {
+    id: 'ground',
+    label: 'Inject: Ground Floor',
+    position: { x: 200, y: 400, floor: 0, confidence: 85, timestamp: now() },
+    networks: [
+      { id: 'n1', name: 'Network 1', rssi: -60 },
+      { id: 'n2', name: 'Network 2', rssi: -68 },
+      { id: 'n3', name: 'Network 3', rssi: -74 },
+    ],
+  },
   lab_201: {
     id: 'lab_201',
     label: 'Inject: Lab 201',
