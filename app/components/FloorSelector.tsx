@@ -1,23 +1,56 @@
 // ICPS/components/FloorSelector.tsx
 
-import React from 'react';
-import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { Animated, LayoutChangeEvent, Pressable, StyleSheet, Text, View } from 'react-native';
 import { colors } from '../utils/colors';
 import { spacing } from '../utils/spacing';
 import { FloorNumber } from '../types';
-import { FLOORS } from '../utils/constants';
+import { FLOORS, FLOOR_LABELS, FLOOR_SHORT_LABELS } from '../utils/constants';
 
 interface FloorSelectorProps {
   activeFloor: FloorNumber;
   onSelectFloor: (floor: FloorNumber) => void;
+  useShortLabels?: boolean;
 }
 
-export default function FloorSelector({ activeFloor, onSelectFloor }: FloorSelectorProps) {
-  const { width } = useWindowDimensions();
-  const isSmallScreen = width < 480; // spec section 10.1 breakpoint
+export default function FloorSelector({
+  activeFloor,
+  onSelectFloor,
+  useShortLabels = false,
+}: FloorSelectorProps) {
+  const [buttonWidth, setButtonWidth] = useState(0);
+  const pillPosition = useRef(new Animated.Value(0)).current;
+  const activeIndex = FLOORS.indexOf(activeFloor);
+
+  useEffect(() => {
+    if (buttonWidth > 0) {
+      Animated.spring(pillPosition, {
+        toValue: activeIndex * buttonWidth,
+        useNativeDriver: true,
+        friction: 8,
+        tension: 60,
+      }).start();
+    }
+  }, [activeIndex, buttonWidth, pillPosition]);
+
+  const handleLayout = (e: LayoutChangeEvent) => {
+    const totalWidth = e.nativeEvent.layout.width;
+    setButtonWidth(totalWidth / FLOORS.length);
+  };
 
   return (
-    <View style={styles.row}>
+    <View style={styles.row} onLayout={handleLayout}>
+      {buttonWidth > 0 && (
+        <Animated.View
+          style={[
+            styles.pill,
+            {
+              width: buttonWidth - 8,
+              transform: [{ translateX: Animated.add(pillPosition, new Animated.Value(4)) }],
+            },
+          ]}
+        />
+      )}
       {FLOORS.map((floor) => {
         const isActive = floor === activeFloor;
         return (
@@ -25,12 +58,12 @@ export default function FloorSelector({ activeFloor, onSelectFloor }: FloorSelec
             key={floor}
             onPress={() => onSelectFloor(floor)}
             accessibilityRole="button"
-            accessibilityLabel={`Floor ${floor}`}
+            accessibilityLabel={FLOOR_LABELS[floor]}
             accessibilityState={{ selected: isActive }}
-            style={[styles.button, isActive && styles.buttonActive]}
+            style={styles.button}
           >
             <Text style={[styles.text, isActive && styles.textActive]}>
-              {isSmallScreen ? `F${floor}` : `Floor ${floor}`}
+              {useShortLabels ? FLOOR_SHORT_LABELS[floor] : FLOOR_LABELS[floor]}
             </Text>
           </Pressable>
         );
@@ -42,22 +75,33 @@ export default function FloorSelector({ activeFloor, onSelectFloor }: FloorSelec
 const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.screenPaddingHorizontal,
-    paddingVertical: spacing.componentSpacingVertical,
+    marginHorizontal: spacing.screenPaddingHorizontal,
+    marginVertical: spacing.componentSpacingVertical,
+    backgroundColor: colors.secondaryButtonBg,
+    borderRadius: spacing.borderRadiusStandard + 4,
+    padding: 4,
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  pill: {
+    position: 'absolute',
+    top: 4,
+    bottom: 4,
+    left: 0,
+    backgroundColor: colors.primary,
+    borderRadius: spacing.borderRadiusStandard,
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
   },
   button: {
     flex: 1,
-    marginHorizontal: 4,
     paddingVertical: 10,
-    borderRadius: spacing.borderRadiusStandard,
-    backgroundColor: colors.secondaryButtonBg,
     alignItems: 'center',
-    minHeight: 48,
     justifyContent: 'center',
-  },
-  buttonActive: {
-    backgroundColor: colors.primary,
+    minHeight: 44,
   },
   text: {
     fontSize: 14,
