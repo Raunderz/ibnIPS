@@ -14,6 +14,7 @@ import { APP_VERSION, BUILD_DATE } from '../utils/constants';
 import { MockScenario } from '../types';
 
 const SCENARIO_BUTTONS: { id: MockScenario['id']; label: string }[] = [
+  { id: 'ground', label: 'Inject: Ground Floor' },
   { id: 'lab_201', label: 'Inject: Lab 201' },
   { id: 'hall_1f', label: 'Inject: Hall 1F' },
   { id: 'physics', label: 'Inject: Physics' },
