@@ -1,8 +1,10 @@
 // ICPS/utils/constants.ts
 
-import { Room } from '../types';
+import { Room, FloorNumber } from '../types';
 
 export const ROOMS: Room[] = [
+  { id: 'reception', name: 'Reception', floor: 0 },
+  { id: 'cafeteria', name: 'Cafeteria', floor: 0 },
   { id: 'cs101', name: 'CS 101', floor: 1 },
   { id: 'hall1f', name: 'Hall 1F', floor: 1 },
   { id: 'lab201', name: 'Lab 201', floor: 2 },
@@ -17,7 +19,21 @@ export const ROOM_LIST_FETCH_TIMEOUT_MS = 5000;
 export const TOAST_DURATION_MS = 2500; // 2-3 seconds, spec 7.2
 export const MAX_TOAST_QUEUE = 1;
 
-export const FLOORS: (1 | 2 | 3)[] = [1, 2, 3];
+export const FLOORS: FloorNumber[] = [0, 1, 2, 3];
+
+export const FLOOR_LABELS: Record<FloorNumber, string> = {
+  0: 'Ground',
+  1: '1st Floor',
+  2: '2nd Floor',
+  3: '3rd Floor',
+};
+
+export const FLOOR_SHORT_LABELS: Record<FloorNumber, string> = {
+  0: 'G',
+  1: '1',
+  2: '2',
+  3: '3',
+};
 
 export const APP_VERSION = '1.0.0';
 export const BUILD_DATE = '2024-11-15';

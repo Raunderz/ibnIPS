@@ -1,6 +1,6 @@
 // ICPS/types/index.ts
 
-export type FloorNumber = 1 | 2 | 3;
+export type FloorNumber = 0 | 1 | 2 | 3; // 0 = Ground
 
 export interface Position {
   x: number; // pixel position on floor plan image
@@ -22,7 +22,7 @@ export interface NetworkReading {
   rssi: number; // signal strength in dBm, e.g. -65
 }
 
-export type MockScenarioId = 'lab_201' | 'hall_1f' | 'physics' | 'edge_case';
+export type MockScenarioId = 'ground' | 'lab_201' | 'hall_1f' | 'physics' | 'edge_case';
 
 export interface MockScenario {
   id: MockScenarioId;
