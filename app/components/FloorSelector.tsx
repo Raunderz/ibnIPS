@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { Animated, LayoutChangeEvent, Pressable, StyleSheet, Text, View } from 'react-native';
-import { colors } from '../utils/colors';
+import { colors, floorColors } from '../utils/colors';
 import { spacing } from '../utils/spacing';
 import { FloorNumber } from '../types';
 import { FLOORS, FLOOR_LABELS, FLOOR_SHORT_LABELS } from '../utils/constants';
@@ -21,6 +21,7 @@ export default function FloorSelector({
   const [buttonWidth, setButtonWidth] = useState(0);
   const pillPosition = useRef(new Animated.Value(0)).current;
   const activeIndex = FLOORS.indexOf(activeFloor);
+  const activeColor = floorColors[activeIndex] ?? colors.primary;
 
   useEffect(() => {
     if (buttonWidth > 0) {
@@ -46,12 +47,14 @@ export default function FloorSelector({
             styles.pill,
             {
               width: buttonWidth - 8,
+              backgroundColor: activeColor,
+              shadowColor: activeColor,
               transform: [{ translateX: Animated.add(pillPosition, new Animated.Value(4)) }],
             },
           ]}
         />
       )}
-      {FLOORS.map((floor) => {
+      {FLOORS.map((floor, i) => {
         const isActive = floor === activeFloor;
         return (
           <Pressable
@@ -62,6 +65,12 @@ export default function FloorSelector({
             accessibilityState={{ selected: isActive }}
             style={styles.button}
           >
+            <View
+              style={[
+                styles.dot,
+                { backgroundColor: isActive ? '#FFFFFF' : floorColors[i] },
+              ]}
+            />
             <Text style={[styles.text, isActive && styles.textActive]}>
               {useShortLabels ? FLOOR_SHORT_LABELS[floor] : FLOOR_LABELS[floor]}
             </Text>
@@ -88,23 +97,28 @@ const styles = StyleSheet.create({
     top: 4,
     bottom: 4,
     left: 0,
-    backgroundColor: colors.primary,
     borderRadius: spacing.borderRadiusStandard,
-    shadowColor: colors.primary,
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
+    shadowOpacity: 0.35,
+    shadowRadius: 5,
     elevation: 3,
   },
   button: {
     flex: 1,
+    flexDirection: 'row',
     paddingVertical: 10,
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: 44,
   },
+  dot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    marginRight: 6,
+  },
   text: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
     color: colors.textPrimary,
   },

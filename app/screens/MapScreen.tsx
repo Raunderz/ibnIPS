@@ -11,9 +11,9 @@ import LoadingSpinner from '../components/LoadingSpinner';
 import { usePosition } from '../hooks/usePosition';
 import { useMockMode } from '../hooks/useMockMode';
 import { useToast } from '../hooks/useToast';
-import { colors } from '../utils/colors';
+import { colors, floorColors } from '../utils/colors';
 import { spacing } from '../utils/spacing';
-import { ROOMS, FLOOR_LABELS } from '../utils/constants';
+import { ROOMS, FLOORS, FLOOR_LABELS } from '../utils/constants';
 import { FloorNumber } from '../types';
 
 export default function MapScreen() {
@@ -29,6 +29,8 @@ export default function MapScreen() {
   const headerOpacity = useRef(new Animated.Value(0)).current;
   const cardTranslateY = useRef(new Animated.Value(16)).current;
   const cardOpacity = useRef(new Animated.Value(0)).current;
+
+  const floorColor = floorColors[FLOORS.indexOf(selectedFloor)] ?? colors.primary;
 
   useEffect(() => {
     Animated.timing(headerOpacity, {
@@ -65,9 +67,11 @@ export default function MapScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <Animated.View style={{ opacity: headerOpacity }}>
-        <View style={styles.headerBar}>
+        <View style={[styles.headerBanner, { backgroundColor: floorColor }]}>
           <Text style={styles.headerTitle}>ICPS</Text>
-          <Text style={styles.headerSubtitle}>{FLOOR_LABELS[selectedFloor]}</Text>
+          <View style={styles.headerBadge}>
+            <Text style={styles.headerBadgeText}>{FLOOR_LABELS[selectedFloor]}</Text>
+          </View>
         </View>
         <FloorSelector activeFloor={selectedFloor} onSelectFloor={setSelectedFloor} />
       </Animated.View>
@@ -90,7 +94,7 @@ export default function MapScreen() {
         ]}
       >
         <View style={styles.infoRow}>
-          <View style={styles.liveDot} />
+          <View style={[styles.liveDot, { backgroundColor: colors.secondary }]} />
           <Text style={styles.roomText}>{nearestRoom ? nearestRoom.name : 'Locating...'}</Text>
         </View>
         {position ? (
@@ -98,8 +102,15 @@ export default function MapScreen() {
             <View
               style={[
                 styles.confidenceBarFill,
-                { width: `${position.confidence}%` },
-                position.confidence < 50 && styles.confidenceBarFillLow,
+                {
+                  width: `${position.confidence}%`,
+                  backgroundColor:
+                    position.confidence >= 70
+                      ? colors.secondary
+                      : position.confidence >= 40
+                      ? colors.warning
+                      : colors.error,
+                },
               ]}
             />
           </View>
@@ -148,23 +159,36 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
-  headerBar: {
+  headerBanner: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: spacing.screenPaddingHorizontal,
-    paddingTop: 8,
+    marginHorizontal: spacing.screenPaddingHorizontal,
+    marginTop: 8,
+    paddingHorizontal: 18,
+    paddingVertical: 16,
+    borderRadius: spacing.borderRadiusStandard + 6,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 4,
   },
   headerTitle: {
     fontSize: 22,
     fontWeight: '800',
-    color: colors.primary,
+    color: '#FFFFFF',
     letterSpacing: 0.5,
   },
-  headerSubtitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.textSecondary,
+  headerBadge: {
+    backgroundColor: 'rgba(255,255,255,0.25)',
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  headerBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
   },
   infoCard: {
     marginHorizontal: spacing.screenPaddingHorizontal,
@@ -187,7 +211,6 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: colors.secondary,
     marginRight: 8,
   },
   roomText: {
@@ -204,11 +227,7 @@ const styles = StyleSheet.create({
   },
   confidenceBarFill: {
     height: '100%',
-    backgroundColor: colors.secondary,
     borderRadius: 3,
-  },
-  confidenceBarFillLow: {
-    backgroundColor: colors.warning,
   },
   confidenceText: {
     fontSize: 13,
