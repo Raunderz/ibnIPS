@@ -9,7 +9,7 @@ import Button from '../components/Button';
 import Toast from '../components/Toast';
 import ErrorDialog from '../components/ErrorDialog';
 import { useToast } from '../hooks/useToast';
-import { colors } from '../utils/colors';
+import { useThemeColors, ThemeColors } from '../utils/colors';
 import { spacing } from '../utils/spacing';
 import { ROOMS, TAG_UPLOAD_TIMEOUT_MS } from '../utils/constants';
 import { getMockScenario } from '../services/mockDataService';
@@ -21,6 +21,8 @@ export default function TagLocationScreen() {
   const [uploadStatus, setUploadStatus] = useState<TagUploadStatus>('idle');
   const [showErrorDialog, setShowErrorDialog] = useState(false);
   const { toast, showToast } = useToast();
+  const themeColors = useThemeColors();
+  const styles = getStyles(themeColors);
 
   // Mock live network readings — swap for apiClient.fetchVisibleNetworks in production
   const networks = getMockScenario('lab_201').networks;
@@ -80,7 +82,7 @@ export default function TagLocationScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors: ThemeColors) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,

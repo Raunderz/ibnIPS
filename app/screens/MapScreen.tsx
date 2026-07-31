@@ -11,7 +11,7 @@ import LoadingSpinner from '../components/LoadingSpinner';
 import { usePosition } from '../hooks/usePosition';
 import { useMockMode } from '../hooks/useMockMode';
 import { useToast } from '../hooks/useToast';
-import { colors, floorColors } from '../utils/colors';
+import { useThemeColors, useFloorColors, ThemeColors } from '../utils/colors';
 import { spacing } from '../utils/spacing';
 import { ROOMS, FLOORS, FLOOR_LABELS } from '../utils/constants';
 import { FloorNumber } from '../types';
@@ -25,12 +25,15 @@ export default function MapScreen() {
     mockBasePosition: getMockBasePosition(),
   });
   const { toast, showToast } = useToast();
+  const themeColors = useThemeColors();
+  const activeFloorColors = useFloorColors();
+  const styles = getStyles(themeColors);
 
   const headerOpacity = useRef(new Animated.Value(0)).current;
   const cardTranslateY = useRef(new Animated.Value(16)).current;
   const cardOpacity = useRef(new Animated.Value(0)).current;
 
-  const floorColor = floorColors[FLOORS.indexOf(selectedFloor)] ?? colors.primary;
+  const floorColor = activeFloorColors[FLOORS.indexOf(selectedFloor)] ?? themeColors.primary;
 
   useEffect(() => {
     Animated.timing(headerOpacity, {
@@ -94,7 +97,7 @@ export default function MapScreen() {
         ]}
       >
         <View style={styles.infoRow}>
-          <View style={[styles.liveDot, { backgroundColor: colors.secondary }]} />
+          <View style={[styles.liveDot, { backgroundColor: themeColors.secondary }]} />
           <Text style={styles.roomText}>{nearestRoom ? nearestRoom.name : 'Locating...'}</Text>
         </View>
         {position ? (
@@ -106,10 +109,10 @@ export default function MapScreen() {
                   width: `${position.confidence}%`,
                   backgroundColor:
                     position.confidence >= 70
-                      ? colors.secondary
+                      ? '#2E7D32'
                       : position.confidence >= 40
-                      ? colors.warning
-                      : colors.error,
+                      ? themeColors.warning
+                      : themeColors.error,
                 },
               ]}
             />
@@ -154,7 +157,7 @@ export default function MapScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors: ThemeColors) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
@@ -164,48 +167,50 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginHorizontal: spacing.screenPaddingHorizontal,
-    marginTop: 8,
-    paddingHorizontal: 18,
+    marginTop: 12,
+    paddingHorizontal: 20,
     paddingVertical: 16,
-    borderRadius: spacing.borderRadiusStandard + 6,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    elevation: 4,
+    borderRadius: spacing.shapeLarge, // MD3 Large Card Shape (16dp)
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    elevation: 3,
   },
   headerTitle: {
     fontSize: 22,
-    fontWeight: '800',
+    fontWeight: '700',
     color: '#FFFFFF',
-    letterSpacing: 0.5,
+    letterSpacing: 0.1,
   },
   headerBadge: {
-    backgroundColor: 'rgba(255,255,255,0.25)',
-    borderRadius: 20,
-    paddingHorizontal: 12,
+    backgroundColor: 'rgba(255,255,255,0.22)',
+    borderRadius: spacing.shapeFull,
+    paddingHorizontal: 14,
     paddingVertical: 6,
   },
   headerBadgeText: {
     color: '#FFFFFF',
     fontSize: 13,
-    fontWeight: '700',
+    fontWeight: '600',
+    letterSpacing: 0.2,
   },
   infoCard: {
     marginHorizontal: spacing.screenPaddingHorizontal,
     marginTop: spacing.componentSpacingVertical,
-    backgroundColor: colors.card,
-    borderRadius: spacing.borderRadiusStandard + 4,
-    padding: spacing.cardPadding,
+    backgroundColor: colors.surfaceContainerLow, // MD3 card surface
+    borderRadius: spacing.shapeLarge, // MD3 Large card shape (16dp)
+    padding: spacing.cardPadding + 2,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2, // MD3 Elevated Card elevation
   },
   infoRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 10,
   },
   liveDot: {
     width: 8,
@@ -214,28 +219,30 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   roomText: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: colors.textPrimary,
+    fontSize: 18,
+    fontWeight: '600',
+    color: colors.onSurface,
+    letterSpacing: 0.1,
   },
   confidenceBarTrack: {
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: colors.secondaryButtonBg,
+    height: 8,
+    borderRadius: spacing.shapeFull,
+    backgroundColor: colors.surfaceContainerHigh,
     overflow: 'hidden',
-    marginBottom: 6,
+    marginBottom: 8,
   },
   confidenceBarFill: {
     height: '100%',
-    borderRadius: 3,
+    borderRadius: spacing.shapeFull,
   },
   confidenceText: {
     fontSize: 13,
-    color: colors.textSecondary,
+    color: colors.onSurfaceVariant,
+    fontWeight: '500',
   },
   actionsRow: {
     flexDirection: 'row',
     paddingHorizontal: spacing.screenPaddingHorizontal,
-    paddingVertical: spacing.componentSpacingVertical,
+    paddingVertical: spacing.componentSpacingVertical + 4,
   },
 });

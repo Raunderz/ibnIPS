@@ -98,36 +98,41 @@ export default function DebugScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  content: { padding: spacing.screenPaddingHorizontal },
+  content: { padding: spacing.screenPaddingHorizontal, paddingVertical: 16 },
   sectionHeader: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: colors.textSecondary,
-    marginTop: spacing.componentSpacingVertical,
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.primary,
+    marginTop: spacing.componentSpacingVertical * 1.5,
     marginBottom: 8,
     letterSpacing: 0.5,
+    paddingLeft: 4,
   },
   card: {
-    backgroundColor: colors.card,
-    borderRadius: spacing.borderRadiusStandard,
+    backgroundColor: colors.surfaceContainerLow,
+    borderRadius: spacing.shapeMedium, // MD3 Medium (12dp)
     padding: spacing.cardPadding,
-    borderWidth: 1,
-    borderColor: colors.border,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 3,
+    elevation: 1, // MD3 Elevated/Filled card style
   },
   toggleRow: {
     flexDirection: 'row',
     alignItems: 'center',
   },
-  toggleLabel: { fontSize: 16, fontWeight: '600', color: colors.textPrimary },
-  helperText: { fontSize: 14, color: colors.textSecondary, marginTop: 2 },
+  toggleLabel: { fontSize: 16, fontWeight: '600', color: colors.onSurface },
+  helperText: { fontSize: 14, color: colors.onSurfaceVariant, marginTop: 2 },
   scenarioGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     marginTop: spacing.componentSpacingVertical,
+    marginHorizontal: -4,
   },
   scenarioButtonWrapper: {
     width: '50%',
     padding: 4,
   },
-  aboutText: { fontSize: 14, color: colors.textPrimary, marginBottom: 4 },
+  aboutText: { fontSize: 14, color: colors.onSurface, marginBottom: 6 },
 });

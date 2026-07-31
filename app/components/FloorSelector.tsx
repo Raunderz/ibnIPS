@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { Animated, LayoutChangeEvent, Pressable, StyleSheet, Text, View } from 'react-native';
-import { colors, floorColors } from '../utils/colors';
+import { useThemeColors, useFloorColors, ThemeColors } from '../utils/colors';
 import { spacing } from '../utils/spacing';
 import { FloorNumber } from '../types';
 import { FLOORS, FLOOR_LABELS, FLOOR_SHORT_LABELS } from '../utils/constants';
@@ -19,9 +19,12 @@ export default function FloorSelector({
   useShortLabels = false,
 }: FloorSelectorProps) {
   const [buttonWidth, setButtonWidth] = useState(0);
+  const themeColors = useThemeColors();
+  const activeFloorColors = useFloorColors();
+  const styles = getStyles(themeColors);
   const pillPosition = useRef(new Animated.Value(0)).current;
   const activeIndex = FLOORS.indexOf(activeFloor);
-  const activeColor = floorColors[activeIndex] ?? colors.primary;
+  const activeColor = activeFloorColors[activeIndex] ?? themeColors.primary;
 
   useEffect(() => {
     if (buttonWidth > 0) {
@@ -68,7 +71,7 @@ export default function FloorSelector({
             <View
               style={[
                 styles.dot,
-                { backgroundColor: isActive ? '#FFFFFF' : floorColors[i] },
+                { backgroundColor: isActive ? '#FFFFFF' : activeFloorColors[i] },
               ]}
             />
             <Text style={[styles.text, isActive && styles.textActive]}>
@@ -81,27 +84,29 @@ export default function FloorSelector({
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors: ThemeColors) => StyleSheet.create({
   row: {
     flexDirection: 'row',
     marginHorizontal: spacing.screenPaddingHorizontal,
     marginVertical: spacing.componentSpacingVertical,
-    backgroundColor: colors.secondaryButtonBg,
-    borderRadius: spacing.borderRadiusStandard + 4,
+    backgroundColor: colors.surfaceContainer, // Material 3 surface container background
+    borderRadius: spacing.shapeFull, // MD3 Segmented Button fully rounded container
     padding: 4,
     position: 'relative',
     overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: colors.outlineVariant,
   },
   pill: {
     position: 'absolute',
     top: 4,
     bottom: 4,
     left: 0,
-    borderRadius: spacing.borderRadiusStandard,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.35,
-    shadowRadius: 5,
-    elevation: 3,
+    borderRadius: spacing.shapeFull, // MD3 fully rounded active item
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
+    elevation: 2,
   },
   button: {
     flex: 1,
@@ -120,7 +125,7 @@ const styles = StyleSheet.create({
   text: {
     fontSize: 13,
     fontWeight: '600',
-    color: colors.textPrimary,
+    color: colors.onSurfaceVariant,
   },
   textActive: {
     color: '#FFFFFF',
