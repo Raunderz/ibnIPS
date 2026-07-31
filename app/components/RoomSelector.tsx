@@ -2,7 +2,7 @@
 
 import React, { useMemo, useState } from 'react';
 import { FlatList, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import { colors } from '../utils/colors';
+import { useThemeColors, ThemeColors } from '../utils/colors';
 import { spacing } from '../utils/spacing';
 import { Room } from '../types';
 
@@ -15,6 +15,8 @@ interface RoomSelectorProps {
 export default function RoomSelector({ rooms, selectedRoom, onSelect }: RoomSelectorProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState('');
+  const themeColors = useThemeColors();
+  const styles = getStyles(themeColors);
 
   const filteredRooms = useMemo(() => {
     const sorted = [...rooms].sort((a, b) => a.name.localeCompare(b.name));
@@ -47,6 +49,7 @@ export default function RoomSelector({ rooms, selectedRoom, onSelect }: RoomSele
         <View style={styles.modalContainer}>
           <TextInput
             placeholder="Search rooms..."
+            placeholderTextColor={themeColors.onSurfaceVariant}
             value={query}
             onChangeText={setQuery}
             style={styles.searchInput}
@@ -75,28 +78,29 @@ export default function RoomSelector({ rooms, selectedRoom, onSelect }: RoomSele
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors: ThemeColors) => StyleSheet.create({
   label: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '500',
-    color: colors.textSecondary,
+    color: colors.primary, // MD3 color role
     marginBottom: 6,
+    paddingLeft: 4,
   },
   field: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: spacing.borderRadiusStandard,
+    borderWidth: 1.5,
+    borderColor: colors.outline,
+    borderRadius: spacing.shapeSmall, // MD3 Text Field border radius (4dp)
     paddingVertical: 12,
     paddingHorizontal: 16,
-    backgroundColor: colors.card,
-    minHeight: 48,
+    backgroundColor: colors.surfaceContainerLow,
+    minHeight: 52,
   },
-  fieldText: { fontSize: 16, color: colors.textPrimary },
-  fieldPlaceholder: { fontSize: 16, color: colors.textSecondary },
-  caret: { color: colors.textSecondary },
+  fieldText: { fontSize: 16, color: colors.onSurface },
+  fieldPlaceholder: { fontSize: 16, color: colors.onSurfaceVariant },
+  caret: { color: colors.onSurfaceVariant },
   modalContainer: {
     flex: 1,
     backgroundColor: colors.background,
@@ -104,24 +108,33 @@ const styles = StyleSheet.create({
   },
   searchInput: {
     borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: spacing.borderRadiusStandard,
-    padding: 12,
-    marginBottom: 12,
-    backgroundColor: colors.card,
+    borderColor: colors.outlineVariant,
+    borderRadius: spacing.shapeFull, // MD3 Search Bar fully rounded style
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    marginBottom: 16,
+    backgroundColor: colors.surfaceContainerHigh,
+    fontSize: 16,
+    color: colors.onSurface,
   },
   roomRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingVertical: 14,
-    paddingHorizontal: 8,
+    paddingVertical: 16,
+    paddingHorizontal: 12,
     borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-    minHeight: 48,
+    borderBottomColor: colors.outlineVariant,
+    minHeight: 56, // MD3 list item height spec
     alignItems: 'center',
   },
-  roomText: { fontSize: 16, color: colors.textPrimary },
-  check: { color: colors.primary, fontWeight: '700' },
-  closeButton: { padding: 16, alignItems: 'center' },
-  closeText: { color: colors.textSecondary, fontSize: 16 },
+  roomText: { fontSize: 16, color: colors.onSurface },
+  check: { color: colors.primary, fontWeight: '700', fontSize: 18 },
+  closeButton: {
+    padding: 16,
+    alignItems: 'center',
+    backgroundColor: colors.surfaceContainer,
+    borderRadius: spacing.shapeFull,
+    marginTop: 8,
+  },
+  closeText: { color: colors.primary, fontSize: 16, fontWeight: '600' },
 });

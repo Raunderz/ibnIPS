@@ -7,11 +7,21 @@ export const spacing = {
   cardPadding: 16,
   buttonPaddingVertical: 12,
   buttonPaddingHorizontal: 16,
-  borderRadiusStandard: 8,
+  borderRadiusStandard: 12, // Updated to MD3 shapeMedium
   borderRadiusSmall: 4,
+
+  // Material 3 Shapes
+  shapeNone: 0,
+  shapeSmall: 4,
+  shapeMedium: 12,
+  shapeLarge: 16,
+  shapeExtraLarge: 28,
+  shapeFull: 999,
+
   elevationBlur: 4,
   elevationOpacity: 0.1,
 } as const;
+
 
 // Typography scale — section 5.2
 export const typography = {

@@ -2,19 +2,13 @@
 
 import React, { useEffect, useRef } from 'react';
 import { Animated, StyleSheet, Text } from 'react-native';
-import { colors } from '../utils/colors';
+import { useThemeColors, ThemeColors } from '../utils/colors';
 import { spacing } from '../utils/spacing';
 import { ToastMessage } from '../types';
 
 interface ToastProps {
   toast: ToastMessage | null;
 }
-
-const variantColors = {
-  success: colors.secondary,
-  warning: colors.warning,
-  error: colors.error,
-};
 
 const variantIcons = {
   success: '✓',
@@ -24,6 +18,14 @@ const variantIcons = {
 
 export default function Toast({ toast }: ToastProps) {
   const opacity = useRef(new Animated.Value(0)).current;
+  const themeColors = useThemeColors();
+  const styles = getStyles(themeColors);
+
+  const variantColors = {
+    success: themeColors.primary === '#D0BCFF' ? '#388E3C' : '#2E7D32',
+    warning: themeColors.warning,
+    error: themeColors.error,
+  };
 
   useEffect(() => {
     if (toast) {
@@ -41,26 +43,35 @@ export default function Toast({ toast }: ToastProps) {
       accessibilityLiveRegion="polite"
     >
       <Text style={styles.text}>
-        {variantIcons[toast.variant]} {toast.message}
+        {variantIcons[toast.variant]}  {toast.message}
       </Text>
     </Animated.View>
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors: ThemeColors) => StyleSheet.create({
   container: {
     position: 'absolute',
-    bottom: 24,
+    bottom: 32,
     left: spacing.screenPaddingHorizontal,
     right: spacing.screenPaddingHorizontal,
-    borderRadius: spacing.borderRadiusStandard,
-    padding: spacing.cardPadding,
+    borderRadius: spacing.shapeSmall, // MD3 Snackbars use 4dp corners
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 6, // MD3 SnackBar elevation
   },
   text: {
     color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '500',
     textAlign: 'center',
+    letterSpacing: 0.2,
   },
 });
