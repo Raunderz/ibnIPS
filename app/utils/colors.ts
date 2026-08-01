@@ -124,5 +124,5 @@ export function useFloorColors() {
   return scheme === 'dark' ? darkFloorColors : floorColors;
 }
 
-export type ThemeColors = typeof lightColors;
+export type ThemeColors = { [K in keyof typeof lightColors]: string };
 export type ColorKey = keyof ThemeColors;

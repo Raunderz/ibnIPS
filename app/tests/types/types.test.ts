@@ -10,7 +10,7 @@ import type {
   ToastMessage,
   ButtonVariant,
   TagUploadStatus,
-} from '../types/index';
+} from '../../types/index';
 
 describe('Types', () => {
   describe('FloorNumber', () => {
