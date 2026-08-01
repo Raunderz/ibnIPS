@@ -48,7 +48,7 @@ export const lightColors = {
   secondaryButtonBg: '#E8DEF8', // Maps to Secondary Container
 
   // Vivid accents matching MD3 tones for a more colorful UI
-  purple: '#6750A4',
+  purple: '#9C27B0',
   pink: '#984061',
   teal: '#006A6A',
   orange: '#8B5000',
@@ -101,7 +101,7 @@ export const darkColors = {
   secondaryButtonBg: '#4A4458', // Maps to Secondary Container
 
   // Vivid accents matching MD3 tones for a more colorful UI
-  purple: '#D0BCFF',
+  purple: '#CE93D8',
   pink: '#EFB8C8',
   teal: '#80E2E2',
   orange: '#FFB300',
