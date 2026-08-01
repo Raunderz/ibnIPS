@@ -1,4 +1,4 @@
-import type { Position, NetworkReading, FloorNumber } from '../types/index';
+import type { Position, NetworkReading, FloorNumber } from '../../types/index';
 
 // Pure utility functions extracted for testing.
 // These represent the core logic that positionService would implement.
@@ -115,7 +115,7 @@ describe('Position Calculation Logic', () => {
 
   describe('interpolatePosition', () => {
     it('should return weighted average position', () => {
-      const readings = [
+      const readings: { position: Position; weight: number }[] = [
         { position: { x: 0, y: 0, floor: 1, confidence: 1, timestamp: 0 }, weight: 1 },
         { position: { x: 10, y: 10, floor: 1, confidence: 1, timestamp: 0 }, weight: 1 },
       ];
@@ -125,7 +125,7 @@ describe('Position Calculation Logic', () => {
     });
 
     it('should weight closer access points more', () => {
-      const readings = [
+      const readings: { position: Position; weight: number }[] = [
         { position: { x: 0, y: 0, floor: 1, confidence: 1, timestamp: 0 }, weight: 3 },
         { position: { x: 10, y: 10, floor: 1, confidence: 1, timestamp: 0 }, weight: 1 },
       ];

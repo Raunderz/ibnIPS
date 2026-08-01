@@ -1,4 +1,4 @@
-import type { MockScenario, NetworkReading, Position } from '../types/index';
+import type { MockScenario, NetworkReading, Position } from '../../types/index';
 
 // Test the mock data service logic — validates that mock scenarios
 // are well-formed and provides helper functions for generating test data.
