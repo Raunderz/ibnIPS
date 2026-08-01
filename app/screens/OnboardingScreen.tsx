@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { SafeAreaView, StyleSheet, Text, View } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useRouter } from 'expo-router';
 import Button from '../components/Button';
 import { setHasSeenOnboarding } from '../services/storageService';
 import { useThemeColors, ThemeColors } from '../utils/colors';
@@ -24,7 +24,7 @@ const SLIDES = [
 ];
 
 export default function OnboardingScreen() {
-  const navigation = useNavigation<any>();
+  const router = useRouter();
   const [index, setIndex] = useState(0);
   const themeColors = useThemeColors();
   const styles = getStyles(themeColors);
@@ -33,7 +33,7 @@ export default function OnboardingScreen() {
 
   const finish = async () => {
     await setHasSeenOnboarding(true);
-    navigation.replace('Map');
+    router.replace('/');
   };
 
   return (

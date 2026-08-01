@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { Animated, SafeAreaView, StyleSheet, Text, View } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useRouter } from 'expo-router';
 import MapCanvas from '../components/MapCanvas';
 import FloorSelector from '../components/FloorSelector';
 import Button from '../components/Button';
@@ -17,7 +17,7 @@ import { ROOMS, FLOORS, FLOOR_LABELS } from '../utils/constants';
 import { FloorNumber } from '../types';
 
 export default function MapScreen() {
-  const navigation = useNavigation<any>();
+  const router = useRouter();
   const { isMockMode, getMockBasePosition } = useMockMode();
   const [selectedFloor, setSelectedFloor] = useState<FloorNumber>(0);
   const { position, status, refresh } = usePosition({
@@ -127,7 +127,7 @@ export default function MapScreen() {
         <View style={{ flex: 1 }}>
           <Button
             label="Tag Location"
-            onPress={() => navigation.navigate('TagLocation')}
+            onPress={() => router.push('/tag')}
             variant="primary"
             disabled={status === 'loading'}
           />
@@ -136,7 +136,7 @@ export default function MapScreen() {
         <View style={{ flex: 1 }}>
           <Button
             label="Settings"
-            onPress={() => navigation.navigate('Debug')}
+            onPress={() => router.push('/settings')}
             variant="secondary"
             disabled={status === 'loading'}
           />

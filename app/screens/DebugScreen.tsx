@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { Alert, SafeAreaView, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useRouter } from 'expo-router';
 import Button from '../components/Button';
 import Toast from '../components/Toast';
 import { useMockMode } from '../hooks/useMockMode';
@@ -22,7 +22,7 @@ const SCENARIO_BUTTONS: { id: MockScenario['id']; label: string }[] = [
 ];
 
 export default function DebugScreen() {
-  const navigation = useNavigation<any>();
+  const router = useRouter();
   const { isMockMode, toggleMockMode, injectScenario } = useMockMode();
   const { toast, showToast } = useToast();
   const [confirmingReset, setConfirmingReset] = useState(false);
@@ -40,7 +40,7 @@ export default function DebugScreen() {
         style: 'destructive',
         onPress: async () => {
           await resetAllData();
-          navigation.navigate('Onboarding');
+          router.push('/onboarding');
         },
       },
     ]);
@@ -86,7 +86,7 @@ export default function DebugScreen() {
         <View style={{ height: spacing.componentSpacingVertical }} />
         <Button
           label="Onboarding Tutorial"
-          onPress={() => navigation.navigate('Onboarding')}
+          onPress={() => router.push('/onboarding')}
           variant="secondary"
         />
       </ScrollView>
