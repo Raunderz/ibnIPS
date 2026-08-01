@@ -2,14 +2,20 @@
 
 import androidx.compose.ui.graphics.Color
 
-val IndigoBlue = Color(0xFF4F46E5)
-val Mint = Color(0xFF14B8A6)
-val Amber = Color(0xFFF59E0B)
+// ICPS Strict Palette
+val PrimaryBlue = Color(0xFF2563EB)
+val SecondaryGreen = Color(0xFF108981)
+val ErrorRed = Color(0xFFEF4444)
+val BackgroundGray = Color(0xFFF9FAFB)
 
-val LightBackground = Color(0xFFF8FAFC)
-val LightSurface = Color(0xFFFFFFFF)
-val LightOnSurface = Color(0xFF111827)
+val CardWhite = Color(0xFFFFFFFF)
+val BorderGray = Color(0xFFE5E7EB)
+val TextPrimary = Color(0xFF1F2937)
+val TextSecondary = Color(0xFF6B7280)
+val DisabledGray = Color(0xFFD1D5DB)
 
-val DarkBackground = Color(0xFF07111F)
-val DarkSurface = Color(0xFF0F172A)
-val DarkOnSurface = Color(0xFFF8FAFC)
+// Dark Mode Palette
+val BackgroundDark = Color(0xFF111827)
+val CardDark = Color(0xFF1F2937)
+val TextPrimaryDark = Color(0xFFF9FAFB)
+val TextSecondaryDark = Color(0xFF9CA3AF)
