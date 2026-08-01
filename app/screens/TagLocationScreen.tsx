@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { SafeAreaView, StyleSheet, View } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useRouter } from 'expo-router';
 import RoomSelector from '../components/RoomSelector';
 import NetworkStatusList from '../components/NetworkStatusList';
 import Button from '../components/Button';
@@ -16,7 +16,7 @@ import { getMockScenario } from '../services/mockDataService';
 import { Room, TagUploadStatus } from '../types';
 
 export default function TagLocationScreen() {
-  const navigation = useNavigation<any>();
+  const router = useRouter();
   const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
   const [uploadStatus, setUploadStatus] = useState<TagUploadStatus>('idle');
   const [showErrorDialog, setShowErrorDialog] = useState(false);
@@ -38,7 +38,7 @@ export default function TagLocationScreen() {
       });
       setUploadStatus('success');
       showToast(`Tagged as ${selectedRoom.name} (Floor ${selectedRoom.floor})`, 'success');
-      setTimeout(() => navigation.goBack(), 800);
+      setTimeout(() => router.back(), 800);
     } catch {
       setUploadStatus('error');
       setShowErrorDialog(true);
