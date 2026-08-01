@@ -6,9 +6,11 @@
 //// on all interfaces, and dispatches incoming requests to `handle_request`.
 ////
 
+import db
 import gleam/erlang/process
 import gleam/io
 import mist
+import sqlight
 import wisp
 import wisp/wisp_mist
 
@@ -31,13 +33,20 @@ pub fn main() -> Nil {
   // Enable Wisp's default request logging.
   wisp.configure_logger()
 
+  // open sqlite database
+  let assert Ok(conn) = db.init()
+  io.println("Database connected")
+
   // Generate a fresh 64-char random string to sign cookies / sessions.
   let secret_key_base = wisp.random_string(64)
+
+  // closure that cpatures `conn`
+  let handler = fn(req) { handle_request(req, conn) }
 
   // Build the Mist server pipeline:
   //   handler -> adapter -> port -> bind -> start
   let assert Ok(_) =
-    wisp_mist.handler(handle_request, secret_key_base)
+    wisp_mist.handler(handler, secret_key_base)
     |> mist.new
     |> mist.port(3000)
     |> mist.bind("0.0.0.0")
@@ -64,10 +73,14 @@ pub fn main() -> Nil {
 /// # Returns
 ///
 /// A `wisp.Response` ready to be sent back to the client.
-fn handle_request(request) {
+fn handle_request(request, conn: sqlight.Connection) {
   case wisp.path_segments(request) {
     // Root route: plain text greeting.
     [] -> wisp.ok() |> wisp.string_body("Hello, World!")
+
+    // routes for icps endpoints
+    ["api", "tag"] -> wisp.ok() |> wisp.string_body("tag endpoint")
+    ["api", "locate"] -> wisp.ok() |> wisp.string_body("locate endpoint")
 
     // Catch-all: nothing else is defined yet.
     _ -> wisp.not_found()
