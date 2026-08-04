@@ -1,0 +1,20 @@
+{
+  "expo": {
+    "name": "ICPSTemp",
+    "slug": "icps-temp",
+    "version": "1.0.0",
+    "scheme": "icps",
+    "android": {
+      "package": "com.raunderz.icps"
+    },
+    "plugins": [
+      "expo-router"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "941bccba-5c93-4af7-bafc-edfd7a499c20"
+      }
+    },
+    "owner": "ishan_18"
+  }
+}
