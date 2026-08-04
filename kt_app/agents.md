@@ -1,8 +1,9 @@
 # Agent Rules
 
-- Never make code changes on `main`.
-- Always switch to `kotlin_app` before editing this project.
-- Treat `kotlin_app` as the Kotlin and Jetpack Compose source of truth.
+- **CRITICAL**: **NEVER FLOOD THE REPOSITORY ROOT**. All Kotlin Android application code, Gradle build files, Gradle wrappers, and `app` module directories MUST remain strictly inside the `kt_app/` directory. NEVER output `build.gradle.kts`, `settings.gradle.kts`, `gradlew`, `gradle/`, or `app/` in the top-level repository root.
+- Never make code changes directly on `main`.
+- Always switch to `kotlin_app` (or appropriate feature branch) before editing this project.
+- Treat `kt_app/` as the Kotlin and Jetpack Compose source of truth.
 - Keep this branch fast to sync, easy to understand, and safe to extend.
 
 ## Architecture & Code Standards (Frozen)
