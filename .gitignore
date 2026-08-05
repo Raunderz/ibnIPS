@@ -1,3 +1,24 @@
+# Gradle
+.gradle/
+**/.gradle/
+build/
+**/build/
+
+# Node
+node_modules/
+
+# Expo
+.expo/
+
+# Android
+*.apk
+*.aab
+
+# macOS
+.DS_Store
+
+# Logs
+*.log
 .gradle/
 .gradle-user-home/
 .idea/
