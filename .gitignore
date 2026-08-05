@@ -16,3 +16,4 @@ captures/
 **/intermediates/
 **/tmp/
 backend/icps.db
+/.build-output

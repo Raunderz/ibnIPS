@@ -10,6 +10,7 @@ android {
     namespace = "com.ibnips.kotlinapp"
     compileSdk = 35
 
+    // Redirect build directory to avoid file locking issues on Windows (OneDrive, Sync, etc.)
     val tempBuildDir = System.getProperty("user.home") + "/.gradle-local-build/ibnIPS/${project.name}"
     layout.buildDirectory.set(file(tempBuildDir))
 
@@ -53,6 +54,12 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
+
+    testOptions {
+        unitTests {
+            isIncludeAndroidResources = true
+        }
+    }
 }
 
 dependencies {
@@ -83,9 +90,49 @@ dependencies {
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.coil.compose)
 
+    // React Native Bridge Support
+    implementation(libs.react.android)
+
+    // Local Unit Tests
+    testImplementation(libs.junit)
+    testImplementation(libs.mockk)
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.turbine)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.core)
+
+    // Instrumented Tests
+    androidTestImplementation(libs.androidx.test.ext.junit)
+    androidTestImplementation(libs.androidx.test.espresso.core)
+    androidTestImplementation(platform(libs.androidx.compose.bom))
+    androidTestImplementation(libs.androidx.compose.ui.test.junit4)
+    androidTestImplementation(libs.hilt.android.testing)
+    kaptAndroidTest(libs.hilt.compiler)
+
     debugImplementation(libs.androidx.compose.ui.tooling)
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
 }
 
 kapt {
     correctErrorTypes = true
+}
+
+// Radical fix for the "Files\JetBrains\IntelliJ" error on Windows.
+tasks.withType<Test> {
+    // 1. Clear problematic environment variables for the forked JVM process.
+    // These are often the cause of "Could not find or load main class Files\JetBrains\IntelliJ"
+    environment("JAVA_TOOL_OPTIONS", "")
+    environment("_JAVA_OPTIONS", "")
+    environment("JDK_JAVA_OPTIONS", "")
+    
+    // 2. Ensure we use a clean path for the executable if JAVA_HOME is available
+    val javaHome = System.getenv("JAVA_HOME")
+    if (!javaHome.isNullOrBlank()) {
+        val javaExe = if (System.getProperty("os.name").contains("Windows")) "java.exe" else "java"
+        executable = file("$javaHome/bin/$javaExe").absolutePath
+    }
+
+    maxHeapSize = "1024m"
+    systemProperty("java.awt.headless", "true")
+    systemProperty("file.encoding", "UTF-8")
 }

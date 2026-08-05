@@ -14,5 +14,7 @@ data class TagUiState(
     val availableRooms: List<Room> = emptyList(),
     val selectedRoom: Room? = null,
     val visibleNetworks: List<WifiNetwork> = emptyList(),
-    val uploadState: UploadState = UploadState.Idle
+    val uploadState: UploadState = UploadState.Idle,
+    val isScanning: Boolean = false,
+    val errorMessage: String? = null
 )
