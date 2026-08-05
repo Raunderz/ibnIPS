@@ -13,30 +13,16 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.resume
 
 /**
  * Production-ready Wi-Fi scanner for the Android native layer.
- *
- * Responsibilities:
- * - validate permissions and Wi-Fi readiness before scanning
- * - start a real Wi-Fi scan on supported devices
- * - wait for scan completion using SCAN_RESULTS_AVAILABLE_ACTION
- * - normalize Android ScanResult objects into WifiResult models
- * - handle scan failures, throttling, security exceptions, and timeouts
- *
- * This scanner is intentionally UI-agnostic so it can be called from:
- * - the React Native bridge
- * - the background position service
- * - future repository or domain-layer code
  */
 class WifiScanner(private val context: Context) {
 
     private val appContext: Context = context.applicationContext
 
-    /**
-     * One-shot scan result outcome used by the native bridge and service layer.
-     */
     sealed class WifiScanOutcome {
         data class Success(
             val results: List<WifiResult>,
@@ -51,9 +37,6 @@ class WifiScanner(private val context: Context) {
         ) : WifiScanOutcome()
     }
 
-    /**
-     * Explicit failure categories keep bridge/service logic simple and predictable.
-     */
     enum class WifiScanFailureReason {
         WIFI_MANAGER_UNAVAILABLE,
         PERMISSION_DENIED,
@@ -67,12 +50,6 @@ class WifiScanner(private val context: Context) {
         UNKNOWN,
     }
 
-    /**
-     * Perform a Wi-Fi scan and return normalized scan data.
-     *
-     * - If `forceRefresh` is false, the current cached scan list is returned.
-     * - If a live scan is requested, the function waits for scan completion or timeout.
-     */
     suspend fun scanNearbyNetworks(forceRefresh: Boolean = true): WifiScanOutcome {
         return withContext(Dispatchers.IO) {
             val validationFailure = validateScanPrerequisites()
@@ -100,10 +77,6 @@ class WifiScanner(private val context: Context) {
         }
     }
 
-    /**
-     * Returns the latest scan snapshot without triggering a new scan.
-     * This is useful as a fallback after throttling or a scan broadcast failure.
-     */
     fun getCachedScanResults(): List<WifiResult> {
         return runCatching {
             readSystemScanResults()
@@ -112,9 +85,6 @@ class WifiScanner(private val context: Context) {
         }
     }
 
-    /**
-     * A small helper used by service and bridge code to decide whether scanning is possible.
-     */
     fun canScanNow(): Boolean {
         val wifiManager = getWifiManager() ?: return false
         return PermissionManager.hasRequiredPermissions(appContext) &&
@@ -130,6 +100,7 @@ class WifiScanner(private val context: Context) {
             )
 
         return suspendCancellableCoroutine { continuation ->
+            val hasResumed = AtomicBoolean(false)
             var receiver: BroadcastReceiver? = null
 
             fun cleanup() {
@@ -140,9 +111,11 @@ class WifiScanner(private val context: Context) {
             }
 
             fun resumeOnce(outcome: WifiScanOutcome) {
-                cleanup()
-                if (continuation.isActive) {
-                    continuation.resume(outcome)
+                if (hasResumed.compareAndSet(false, true)) {
+                    cleanup()
+                    if (continuation.isActive) {
+                        continuation.resume(outcome)
+                    }
                 }
             }
 
