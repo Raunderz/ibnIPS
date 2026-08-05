@@ -17,6 +17,7 @@ export default function RootLayout() {
       <Stack.Screen name="onboarding" options={{ headerShown: false }} />
       <Stack.Screen name="tag" options={{ title: 'Tag Your Location', presentation: 'modal' }} />
       <Stack.Screen name="settings" options={{ title: 'Settings' }} />
+      <Stack.Screen name="wifi-debug" options={{ title: 'Wi-Fi Networks' }} />
     </Stack>
   );
 }
