@@ -19,3 +19,22 @@ node_modules/
 
 # Logs
 *.log
+.gradle/
+.gradle-user-home/
+.idea/
+.kotlin/
+.vscode/
+build/
+*.iml
+*.keystore
+*.jks
+local.properties
+captures/
+.cxx/
+.externalNativeBuild/
+**/build/
+**/generated/
+**/intermediates/
+**/tmp/
+backend/icps.db
+/.build-output
