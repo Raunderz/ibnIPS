@@ -1,17 +1,25 @@
 package com.raunderz.icps;
 
-import com.facebook.react.BaseReactPackage;
-import com.facebook.react.bridge.ModuleSpec;
+import com.facebook.react.ReactPackage;
 import com.facebook.react.bridge.NativeModule;
 import com.facebook.react.bridge.ReactApplicationContext;
-import java.util.Arrays;
+import com.facebook.react.uimanager.ViewManager;
+
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
-public class WifiScannerPackage extends BaseReactPackage {
+public class WifiScannerPackage implements ReactPackage {
+
   @Override
-  public List<ModuleSpec> getNativeModules(ReactApplicationContext reactContext) {
-    return Arrays.<ModuleSpec>asList(
-      new ModuleSpec(WifiScannerModule.class, () -> new WifiScannerModule(reactContext))
-    );
+  public List<NativeModule> createNativeModules(ReactApplicationContext reactContext) {
+    List<NativeModule> modules = new ArrayList<>();
+    modules.add(new WifiScannerModule(reactContext));
+    return modules;
+  }
+
+  @Override
+  public List<ViewManager> createViewManagers(ReactApplicationContext reactContext) {
+    return Collections.emptyList();
   }
 }

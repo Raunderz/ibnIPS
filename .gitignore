@@ -1,2 +1,21 @@
-node_modules
-agent-calls.csv
+# Gradle
+.gradle/
+**/.gradle/
+build/
+**/build/
+
+# Node
+node_modules/
+
+# Expo
+.expo/
+
+# Android
+*.apk
+*.aab
+
+# macOS
+.DS_Store
+
+# Logs
+*.log

@@ -1,6 +1,13 @@
-// app/services/wifiService.ts
+// ICPS/services/wifiService.ts
+// Bridge between the React layer and the native Android WifiScannerModule.
 
 import { NativeModules, NativeEventEmitter } from 'react-native';
+import {
+  dedupeAndSortByStrength,
+  isRssiUsable,
+  clampRssi,
+} from '../utils/wifi';
+import { MIN_RSSI_THRESHOLD } from '../utils/constants';
 
 export interface Network {
   bssid: string;
@@ -9,21 +16,35 @@ export interface Network {
   frequency: number;
 }
 
-const { WifiScanner } = NativeModules;
+interface NativeWifiScanner {
+  startScanning(): void;
+  stopScanning(): void;
+  getLastScans(): void;
+}
+
+const WifiScanner = NativeModules.WifiScanner as NativeWifiScanner | undefined;
+
+// The native module emits events through the global device event emitter, so we
+// use the no-argument constructor (passing the module would require it to
+// implement addListener/removeListeners for the new NativeEventEmitter API).
+const eventEmitter = new NativeEventEmitter();
+
+const SCANS_EVENT = 'wifiScansReceived';
 
 class WifiService {
-  private eventEmitter: NativeEventEmitter | null = null;
   private subscription: any = null;
   private lastScans: Network[] = [];
 
-  constructor() {
-    if (WifiScanner) {
-      this.eventEmitter = new NativeEventEmitter(WifiScanner);
-    }
+  /**
+   * True when the native module is available on this platform/build.
+   */
+  get isSupported(): boolean {
+    return !!WifiScanner;
   }
 
   /**
-   * Start Wi-Fi scanning and listen for results
+   * Start listening for Wi-Fi scan results. `onScansReceived` is invoked on
+   * every native scan event with a deduplicated, strongest-first list.
    */
   startScanning(onScansReceived: (scans: Network[]) => void): void {
     if (!WifiScanner) {
@@ -35,27 +56,34 @@ class WifiService {
       return; // Already listening
     }
 
-    // Listen for scan results from native module
-    this.subscription = this.eventEmitter?.addListener(
-      'wifiScansReceived',
-      (networks: Network[]) => {
-        // Sort by RSSI (strongest first)
-        const sorted = networks.sort((a, b) => b.rssi - a.rssi);
-        
-        // Filter out weak signals (< -100 dBm)
-        const filtered = sorted.filter(n => n.rssi >= -100);
-        
-        this.lastScans = filtered;
-        onScansReceived(filtered);
+    this.subscription = eventEmitter.addListener(
+      SCANS_EVENT,
+      (payload: { scans?: Network[] } | Network[]) => {
+        const raw = Array.isArray(payload)
+          ? payload
+          : (payload && Array.isArray(payload.scans) ? payload.scans : []);
+
+        const normalized: Network[] = raw.map((network) => ({
+          bssid: network.bssid,
+          ssid: network.ssid ?? null,
+          rssi: clampRssi(network.rssi),
+          frequency: network.frequency ?? 0,
+        }));
+
+        const prepared = dedupeAndSortByStrength(normalized).filter((n) =>
+          isRssiUsable(n.rssi)
+        );
+
+        this.lastScans = prepared;
+        onScansReceived(prepared);
       }
     );
 
-    // Start scanning on native side
     WifiScanner.startScanning();
   }
 
   /**
-   * Stop Wi-Fi scanning
+   * Stop listening for scans and free native resources.
    */
   stopScanning(): void {
     if (this.subscription) {
@@ -71,31 +99,17 @@ class WifiService {
   }
 
   /**
-   * Get the last scanned networks
+   * Return the most recent scan results kept in memory.
    */
   getLastScans(): Network[] {
     return this.lastScans;
   }
 
   /**
-   * Get signal strength in bars (0-8)
+   * Filter RSSI values below the usable threshold.
    */
-  getSignalBars(rssi: number): number {
-    if (rssi >= -50) return 8;
-    if (rssi >= -60) return 7;
-    if (rssi >= -70) return 6;
-    if (rssi >= -80) return 5;
-    if (rssi >= -90) return 4;
-    if (rssi >= -100) return 2;
-    return 0; // No signal
-  }
-
-  /**
-   * Get signal quality percentage
-   */
-  getSignalQuality(rssi: number): number {
-    const quality = 2 * (rssi + 100);
-    return Math.max(0, Math.min(100, quality));
+  isUsableRssi(rssi: number): boolean {
+    return rssi >= MIN_RSSI_THRESHOLD;
   }
 }
 

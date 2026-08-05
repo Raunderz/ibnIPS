@@ -1,22 +1,19 @@
-// app/screens/WifiDebugScreen.tsx
+// ICPS/screens/WifiDebugScreen.tsx
+// Debug screen that displays live Wi-Fi scan results (BSSID + RSSI) sorted by
+// signal strength. Display-only: no backend calls, no persistence.
 
 import React, { useCallback } from 'react';
-import {
-  View,
-  ScrollView,
-  Text,
-  StyleSheet,
-  SafeAreaView,
-  TouchableOpacity,
-  ActivityIndicator,
-} from 'react-native';
+import { SafeAreaView, ScrollView, StyleSheet, Text, View, ActivityIndicator } from 'react-native';
 import { useWifiScanning } from '../hooks/useWifiScanning';
-import { NetworkList } from '../components/NetworkList';
-import { Button } from '../components/Button';
-import { colors } from '../utils/colors';
+import NetworkList from '../components/NetworkList';
+import Button from '../components/Button';
+import { useThemeColors, ThemeColors } from '../utils/colors';
 import { spacing } from '../utils/spacing';
+import { MAX_NETWORKS_DISPLAY } from '../utils/constants';
 
-export const WifiDebugScreen: React.FC = () => {
+export default function WifiDebugScreen() {
+  const themeColors = useThemeColors();
+  const styles = getStyles(themeColors);
   const {
     scans,
     isScanning,
@@ -25,8 +22,6 @@ export const WifiDebugScreen: React.FC = () => {
     error,
     startScanning,
     stopScanning,
-    getSignalBars,
-    getSignalQuality,
   } = useWifiScanning({ enabled: true, pauseInBackground: true });
 
   const handleToggleScanning = useCallback(() => {
@@ -37,57 +32,50 @@ export const WifiDebugScreen: React.FC = () => {
     }
   }, [isScanning, startScanning, stopScanning]);
 
-  const formatTime = (date: Date | null) => {
+  const handleRefresh = useCallback(() => {
+    stopScanning();
+    startScanning();
+  }, [stopScanning, startScanning]);
+
+  const formatTime = (date: Date | null): string => {
     if (!date) return 'Never';
-    const now = new Date();
-    const diff = now.getTime() - date.getTime();
+    const diff = Math.max(0, Date.now() - date.getTime());
     const seconds = Math.floor(diff / 1000);
-    
     if (seconds < 60) return `${seconds}s ago`;
     const minutes = Math.floor(seconds / 60);
     if (minutes < 60) return `${minutes}m ago`;
-    const hours = Math.floor(minutes / 60);
-    return `${hours}h ago`;
+    return `${Math.floor(minutes / 60)}h ago`;
   };
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-        {/* Header */}
-        <View style={styles.header}>
-          <Text style={styles.title}>Wi-Fi Networks</Text>
-          <Text style={styles.subtitle}>Live network scanning</Text>
-        </View>
-
-        {/* Status Section */}
-        <View style={styles.statusCard}>
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        {/* Status card */}
+        <View style={styles.card}>
           <View style={styles.statusRow}>
             <Text style={styles.statusLabel}>Status</Text>
             <View style={styles.statusValueContainer}>
-              {isScanning && <ActivityIndicator size="small" color={colors.primary} />}
-              <Text style={[styles.statusValue, { color: isScanning ? colors.success : '#999' }]}>
+              {isScanning && <ActivityIndicator size="small" color={themeColors.primary} />}
+              <Text style={[styles.statusValue, { color: isScanning ? themeColors.teal : themeColors.onSurfaceVariant }]}>
                 {isScanning ? 'Scanning...' : 'Stopped'}
               </Text>
             </View>
           </View>
-
           <View style={styles.statusRow}>
             <Text style={styles.statusLabel}>Networks Found</Text>
             <Text style={styles.statusValue}>{scans.length}</Text>
           </View>
-
           <View style={styles.statusRow}>
             <Text style={styles.statusLabel}>Total Scans</Text>
             <Text style={styles.statusValue}>{scanCount}</Text>
           </View>
-
           <View style={styles.statusRow}>
             <Text style={styles.statusLabel}>Last Update</Text>
             <Text style={styles.statusValue}>{formatTime(lastUpdate)}</Text>
           </View>
         </View>
 
-        {/* Error Display */}
+        {/* Error display */}
         {error && (
           <View style={styles.errorCard}>
             <Text style={styles.errorTitle}>Error</Text>
@@ -95,164 +83,158 @@ export const WifiDebugScreen: React.FC = () => {
           </View>
         )}
 
-        {/* Control Buttons */}
-        <View style={styles.buttonGroup}>
-          <Button
-            title={isScanning ? 'Stop Scanning' : 'Start Scanning'}
-            onPress={handleToggleScanning}
-            variant={isScanning ? 'danger' : 'primary'}
-          />
+        {/* Controls */}
+        <View style={styles.actionsRow}>
+          <View style={{ flex: 1 }}>
+            <Button
+              label={isScanning ? 'Stop Scanning' : 'Start Scanning'}
+              onPress={handleToggleScanning}
+              variant={isScanning ? 'danger' : 'primary'}
+            />
+          </View>
+          <View style={{ width: spacing.componentSpacingVertical }} />
+          <View style={{ flex: 1 }}>
+            <Button label="Refresh" onPress={handleRefresh} variant="secondary" />
+          </View>
         </View>
 
-        {/* Network List */}
-        <View style={styles.listContainer}>
+        {/* Network list */}
+        <View style={styles.listSection}>
           <Text style={styles.sectionTitle}>Available Networks</Text>
           <NetworkList
             networks={scans}
-            getSignalBars={getSignalBars}
-            getSignalQuality={getSignalQuality}
             isLoading={isScanning && scans.length === 0}
-            maxNetworks={50}
+            maxNetworks={MAX_NETWORKS_DISPLAY}
           />
         </View>
 
-        {/* Footer Info */}
-        {scans.length > 0 && (
-          <View style={styles.infoCard}>
-            <Text style={styles.infoTitle}>Signal Strength Reference</Text>
-            <View style={styles.infoRow}>
-              <View style={[styles.colorBox, { backgroundColor: colors.success }]} />
-              <Text style={styles.infoText}>Excellent (-50 dBm or higher)</Text>
-            </View>
-            <View style={styles.infoRow}>
-              <View style={[styles.colorBox, { backgroundColor: colors.warning }]} />
-              <Text style={styles.infoText}>Good (-60 to -50 dBm)</Text>
-            </View>
-            <View style={styles.infoRow}>
-              <View style={[styles.colorBox, { backgroundColor: colors.danger }]} />
-              <Text style={styles.infoText}>Fair (-70 to -60 dBm)</Text>
-            </View>
-            <View style={styles.infoRow}>
-              <View style={[styles.colorBox, { backgroundColor: '#CCC' }]} />
-              <Text style={styles.infoText}>Weak (-100 to -70 dBm)</Text>
-            </View>
+        {/* Signal reference */}
+        <View style={styles.infoCard}>
+          <Text style={styles.infoTitle}>Signal Strength Reference</Text>
+          <View style={styles.infoRow}>
+            <View style={[styles.colorDot, { backgroundColor: '#2E7D32' }]} />
+            <Text style={styles.infoText}>Excellent (-50 dBm or higher)</Text>
           </View>
-        )}
+          <View style={styles.infoRow}>
+            <View style={[styles.colorDot, { backgroundColor: themeColors.warning }]} />
+            <Text style={styles.infoText}>Fair (-70 to -50 dBm)</Text>
+          </View>
+          <View style={styles.infoRow}>
+            <View style={[styles.colorDot, { backgroundColor: themeColors.error }]} />
+            <Text style={styles.infoText}>Weak (-100 to -70 dBm)</Text>
+          </View>
+          <View style={styles.infoRow}>
+            <View style={[styles.colorDot, { backgroundColor: themeColors.onSurfaceVariant }]} />
+            <Text style={styles.infoText}>Unusable (below -100 dBm)</Text>
+          </View>
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
-};
+}
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#FFF',
-  },
-  scrollView: {
-    flex: 1,
-    paddingHorizontal: spacing.lg,
-  },
-  header: {
-    marginTop: spacing.lg,
-    marginBottom: spacing.md,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: '800',
-    color: colors.text,
-    marginBottom: spacing.xs,
-  },
-  subtitle: {
-    fontSize: 14,
-    color: '#999',
-  },
-  statusCard: {
-    backgroundColor: '#F9F9F9',
-    borderRadius: 12,
-    padding: spacing.lg,
-    marginBottom: spacing.lg,
-    borderWidth: 1,
-    borderColor: '#E8E8E8',
-  },
-  statusRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: spacing.md,
-  },
-  statusLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#666',
-  },
-  statusValueContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  statusValue: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: colors.text,
-  },
-  errorCard: {
-    backgroundColor: '#FFE8E8',
-    borderRadius: 8,
-    padding: spacing.md,
-    marginBottom: spacing.lg,
-    borderLeftWidth: 4,
-    borderLeftColor: colors.danger,
-  },
-  errorTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: colors.danger,
-    marginBottom: spacing.xs,
-  },
-  errorMessage: {
-    fontSize: 12,
-    color: '#666',
-    lineHeight: 18,
-  },
-  buttonGroup: {
-    marginBottom: spacing.lg,
-  },
-  listContainer: {
-    marginBottom: spacing.lg,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: colors.text,
-    marginBottom: spacing.md,
-  },
-  infoCard: {
-    backgroundColor: '#F0F8FF',
-    borderRadius: 8,
-    padding: spacing.md,
-    marginBottom: spacing.lg,
-    borderWidth: 1,
-    borderColor: '#B8E0F0',
-  },
-  infoTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: colors.primary,
-    marginBottom: spacing.sm,
-  },
-  infoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: spacing.sm,
-  },
-  colorBox: {
-    width: 12,
-    height: 12,
-    borderRadius: 2,
-    marginRight: spacing.sm,
-  },
-  infoText: {
-    fontSize: 12,
-    color: '#666',
-  },
-});
+const getStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
+    content: {
+      padding: spacing.screenPaddingHorizontal,
+      paddingVertical: 16,
+    },
+    card: {
+      backgroundColor: colors.surfaceContainerLow,
+      borderRadius: spacing.shapeMedium,
+      padding: spacing.cardPadding,
+      marginBottom: spacing.componentSpacingVertical,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.08,
+      shadowRadius: 3,
+      elevation: 1,
+    },
+    statusRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: spacing.componentSpacingVertical,
+    },
+    statusLabel: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: colors.onSurfaceVariant,
+    },
+    statusValueContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.componentSpacingVertical,
+    },
+    statusValue: {
+      fontSize: 15,
+      fontWeight: '700',
+      color: colors.onSurface,
+    },
+    errorCard: {
+      backgroundColor: colors.errorContainer,
+      borderRadius: spacing.shapeMedium,
+      padding: spacing.cardPadding,
+      marginBottom: spacing.componentSpacingVertical,
+      borderLeftWidth: 4,
+      borderLeftColor: colors.error,
+    },
+    errorTitle: {
+      fontSize: 14,
+      fontWeight: '700',
+      color: colors.onErrorContainer,
+      marginBottom: spacing.componentSpacingVertical,
+    },
+    errorMessage: {
+      fontSize: 13,
+      color: colors.onErrorContainer,
+      lineHeight: 18,
+    },
+    actionsRow: {
+      flexDirection: 'row',
+      marginBottom: spacing.componentSpacingVertical,
+    },
+    listSection: {
+      marginBottom: spacing.componentSpacingVertical,
+    },
+    sectionTitle: {
+      fontSize: 16,
+      fontWeight: '700',
+      color: colors.onSurface,
+      marginBottom: spacing.componentSpacingVertical,
+    },
+    infoCard: {
+      backgroundColor: colors.primaryContainer,
+      borderRadius: spacing.shapeMedium,
+      padding: spacing.cardPadding,
+      marginBottom: spacing.componentSpacingVertical,
+    },
+    infoTitle: {
+      fontSize: 13,
+      fontWeight: '700',
+      color: colors.onPrimaryContainer,
+      marginBottom: spacing.componentSpacingVertical,
+    },
+    infoRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: spacing.componentSpacingVertical,
+    },
+    colorDot: {
+      width: 12,
+      height: 12,
+      borderRadius: 6,
+      marginRight: spacing.componentSpacingVertical,
+    },
+    infoText: {
+      fontSize: 12,
+      color: colors.onPrimaryContainer,
+    },
+  });
+
+// Named export kept for the (currently unused) RootNavigator module.
+export { WifiDebugScreen };
