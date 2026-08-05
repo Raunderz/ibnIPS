@@ -1,0 +1,78 @@
+--- SDK Inspection ---
+
+[Platforms] at C:/Users/KIIT/AppData/Local/Android/Sdk/platforms:
+ - android-34
+ - android-35
+ - android-36
+ - android-37.0
+ - android-37.1
+
+[System Images] at C:/Users/KIIT/AppData/Local/Android/Sdk/system-images:
+ - android-36.1
+ - android-37.1
+
+[Build Tools] at C:/Users/KIIT/AppData/Local/Android/Sdk/build-tools:
+ - 34.0.0
+ - 35.0.0
+ - 36.0.0
+ - 36.1.0
+
+[Platform Tools] at C:/Users/KIIT/AppData/Local/Android/Sdk/platform-tools:
+ - adb.exe
+ - AdbWinApi.dll
+ - AdbWinUsbApi.dll
+ - etc1tool.exe
+ - fastboot.exe
+ - hprof-conv.exe
+ - libwinpthread-1.dll
+ - make_f2fs.exe
+ - make_f2fs_casefold.exe
+ - mke2fs.conf
+ - mke2fs.exe
+ - NOTICE.txt
+ - package.xml
+ - source.properties
+ - sqlite3.exe
+
+[Emulator] at C:/Users/KIIT/AppData/Local/Android/Sdk/emulator:
+ - bin64
+ - concrt140.dll
+ - crashpad_handler.exe
+ - crashreport.exe
+ - drivers
+ - emulator-check.exe
+ - emulator.exe
+ - include
+ - lib
+ - lib64
+ - libabseil_dll.dll
+ - libandroid-emu-agents.dll
+ - libandroid-emu-base-logging.dll
+ - libandroid-emu-curl.dll
+ - libandroid-emu-metrics.dll
+ - libandroid-emu-protos.dll
+ - libglib2_windows_msvc-x86_64.dll
+ - liblibprotobuf.dll
+ - LICENSE
+ - mksdcard.exe
+ - msvcp140.dll
+ - msvcp140_1.dll
+ - msvcp140_2.dll
+ - msvcp140_atomic_wait.dll
+ - msvcp140_codecvt_ids.dll
+ - netsimd.exe
+ - nimble_bridge.exe
+ - NOTICE.csv
+ - NOTICE.txt
+ - package.xml
+ - qemu
+ - qemu-img.exe
+ - qsn.exe
+ - resources
+ - source.properties
+ - vccorlib140.dll
+ - vcruntime140.dll
+ - vcruntime140_1.dll
+
+[Cmdline Tools] at C:/Users/KIIT/AppData/Local/Android/Sdk/cmdline-tools:
+ - latest
