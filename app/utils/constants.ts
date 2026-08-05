@@ -1,41 +1,47 @@
-// ICPS/utils/constants.ts
+// app/utils/constants.ts
 
-import { Room, FloorNumber } from '../types';
+// AsyncStorage Keys
+export const HAS_SEEN_ONBOARDING_KEY = 'hasSeenOnboarding';
 
-export const ROOMS: Room[] = [
-  { id: 'reception', name: 'Reception', floor: 0 },
-  { id: 'cafeteria', name: 'Cafeteria', floor: 0 },
-  { id: 'cs101', name: 'CS 101', floor: 1 },
-  { id: 'hall1f', name: 'Hall 1F', floor: 1 },
-  { id: 'lab201', name: 'Lab 201', floor: 2 },
-  { id: 'physics312', name: 'Physics 312', floor: 3 },
-];
+export const FLOORS = [0, 1, 2, 3] as const;
 
-export const POSITION_UPDATE_INTERVAL_MS = 4000; // 3-5 seconds per spec 3.1
-export const POSITION_TIMEOUT_MS = 5000;
-export const TAG_UPLOAD_TIMEOUT_MS = 10000;
-export const ROOM_LIST_FETCH_TIMEOUT_MS = 5000;
-
-export const TOAST_DURATION_MS = 2500; // 2-3 seconds, spec 7.2
-export const MAX_TOAST_QUEUE = 1;
-
-export const FLOORS: FloorNumber[] = [0, 1, 2, 3];
-
-export const FLOOR_LABELS: Record<FloorNumber, string> = {
-  0: 'Ground',
+export const FLOOR_LABELS: Record<number, string> = {
+  0: 'Ground Floor',
   1: '1st Floor',
   2: '2nd Floor',
   3: '3rd Floor',
 };
 
-export const FLOOR_SHORT_LABELS: Record<FloorNumber, string> = {
+export const FLOOR_SHORT_LABELS: Record<number, string> = {
   0: 'G',
   1: '1',
   2: '2',
   3: '3',
 };
 
-export const APP_VERSION = '1.0.0';
-export const BUILD_DATE = '2024-11-15';
+export const ROOMS = [
+  { id: 'reception', name: 'Reception', floor: 0 },
+  { id: 'cafeteria', name: 'Cafeteria', floor: 0 },
+  { id: 'cs101', name: 'CS101', floor: 1 },
+  { id: 'hall_1f', name: 'Hall (1F)', floor: 1 },
+  { id: 'lab_201', name: 'Lab 201', floor: 2 },
+  { id: 'physics_312', name: 'Physics Lab (312)', floor: 3 },
+];
 
-export const HAS_SEEN_ONBOARDING_KEY = 'hasSeenOnboarding';
+// Position Polling
+export const POSITION_UPDATE_INTERVAL_MS = 5000;
+export const POSITION_REQUEST_TIMEOUT_MS = 5000;
+
+// Toast Messages
+export const TOAST_DURATION_MS = 3000;
+
+// Wi-Fi Scanning
+export const WIFI_SCAN_INTERVAL_MS = 3000;
+export const MIN_RSSI_THRESHOLD = -100;
+export const MAX_NETWORKS_DISPLAY = 50;
+
+// Signal Quality Thresholds
+export const SIGNAL_QUALITY_EXCELLENT = 70;
+export const SIGNAL_QUALITY_GOOD = 40;
+export const SIGNAL_QUALITY_FAIR = 20;
+export const SIGNAL_QUALITY_POOR = 0;

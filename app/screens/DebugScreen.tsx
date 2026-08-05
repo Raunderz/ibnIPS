@@ -80,6 +80,15 @@ export default function DebugScreen() {
           <Text style={styles.aboutText}>Build Date: {BUILD_DATE}</Text>
         </View>
 
+        <Text style={styles.sectionHeader}>WIFI</Text>
+        <View style={styles.card}>
+          <Button
+            label="Wi-Fi Networks"
+            onPress={() => router.push('/wifi-debug')}
+            variant="secondary"
+          />
+        </View>
+
         <View style={{ height: spacing.componentSpacingVertical * 2 }} />
         <Button label="Reset All Data" onPress={handleResetPress} variant="danger" />
 

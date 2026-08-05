@@ -1,39 +1,31 @@
+// ICPS/components/SignalBar.tsx
+// Visual Wi-Fi signal strength bar for a single network.
+
 import React from 'react';
 import { View, StyleSheet, Text } from 'react-native';
 import { useThemeColors } from '../utils/colors';
+import { getSignalBars } from '../utils/wifi';
 
 interface SignalBarProps {
   rssi: number;
 }
 
+const BAR_COLORS = [
+  '#9E9E9E', // 0 - unusable (grey)
+  '#F44336', // 1 - red
+  '#FF9800', // 2 - orange
+  '#FFC107', // 3 - amber
+  '#FFEB3B', // 4 - yellow
+  '#CDDC39', // 5 - lime
+  '#8BC34A', // 6 - light green
+  '#4CAF50', // 7 - green
+  '#2E7D32', // 8 - strong green
+];
+
 export default function SignalBar({ rssi }: SignalBarProps) {
   const themeColors = useThemeColors();
-  let bars = 0;
-  let color: string = themeColors.onSurfaceVariant;
-
-  // Signal strength threshold logic from spec
-  if (rssi >= -50) {
-    bars = 8;
-    color = '#4CAF50'; // Green
-  } else if (rssi >= -60) {
-    bars = 7;
-    color = '#8BC34A'; // Light Green
-  } else if (rssi >= -70) {
-    bars = 6;
-    color = '#CDDC39'; // Lime
-  } else if (rssi >= -80) {
-    bars = 5;
-    color = '#FFEB3B'; // Yellow
-  } else if (rssi >= -90) {
-    bars = 4;
-    color = '#FF9800'; // Orange
-  } else if (rssi >= -100) {
-    bars = 2;
-    color = '#F44336'; // Red
-  } else {
-    bars = 0;
-    color = '#9E9E9E'; // Grey (⊗)
-  }
+  const bars = getSignalBars(rssi);
+  const color = BAR_COLORS[bars] ?? BAR_COLORS[0];
 
   return (
     <View style={styles.container}>
@@ -69,7 +61,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     marginRight: 10,
-    minWidth: 55,
+    minWidth: 60,
     textAlign: 'right',
   },
   barContainer: {
