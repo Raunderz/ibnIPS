@@ -1,61 +1,101 @@
-import { NativeModules, NativeEventEmitter, Platform } from 'react-native';
+// app/services/wifiService.ts
 
-export type Network = {
+import { NativeModules, NativeEventEmitter } from 'react-native';
+
+export interface Network {
   bssid: string;
   ssid: string | null;
   rssi: number;
-  frequency?: number;
-};
+  frequency: number;
+}
 
-const { WifiScannerModule } = NativeModules;
+const { WifiScanner } = NativeModules;
 
 class WifiService {
-  private emitter = WifiScannerModule ? new NativeEventEmitter(WifiScannerModule) : null;
-  private listener: any = null;
+  private eventEmitter: NativeEventEmitter | null = null;
+  private subscription: any = null;
   private lastScans: Network[] = [];
 
+  constructor() {
+    if (WifiScanner) {
+      this.eventEmitter = new NativeEventEmitter(WifiScanner);
+    }
+  }
+
+  /**
+   * Start Wi-Fi scanning and listen for results
+   */
   startScanning(onScansReceived: (scans: Network[]) => void): void {
-    if (!WifiScannerModule) {
-      console.warn('WifiScannerModule is not available on this platform.');
+    if (!WifiScanner) {
+      console.error('WifiScanner module not available');
       return;
     }
 
-    // Stop previous listener to prevent leaks
-    this.stopScanning();
+    if (this.subscription) {
+      return; // Already listening
+    }
 
-    this.listener = this.emitter?.addListener('wifiScansReceived', (event: { scans: any[] }) => {
-      const rawScans = event.scans || [];
-      
-      // Transform, filter and sort
-      const processedScans: Network[] = rawScans
-        .filter((scan) => scan.bssid && (scan.rssi === undefined || scan.rssi >= -100))
-        .map((scan) => ({
-          bssid: scan.bssid,
-          ssid: scan.ssid && scan.ssid.trim() !== '' ? scan.ssid : '(Hidden)',
-          rssi: scan.rssi,
-          frequency: scan.frequency,
-        }))
-        .sort((a, b) => b.rssi - a.rssi); // Strongest first
+    // Listen for scan results from native module
+    this.subscription = this.eventEmitter?.addListener(
+      'wifiScansReceived',
+      (networks: Network[]) => {
+        // Sort by RSSI (strongest first)
+        const sorted = networks.sort((a, b) => b.rssi - a.rssi);
+        
+        // Filter out weak signals (< -100 dBm)
+        const filtered = sorted.filter(n => n.rssi >= -100);
+        
+        this.lastScans = filtered;
+        onScansReceived(filtered);
+      }
+    );
 
-      this.lastScans = processedScans;
-      onScansReceived(processedScans);
-    });
-
-    WifiScannerModule.startListening();
+    // Start scanning on native side
+    WifiScanner.startScanning();
   }
 
+  /**
+   * Stop Wi-Fi scanning
+   */
   stopScanning(): void {
-    if (this.listener) {
-      this.listener.remove();
-      this.listener = null;
+    if (this.subscription) {
+      this.subscription.remove();
+      this.subscription = null;
     }
-    if (WifiScannerModule) {
-      WifiScannerModule.stopListening();
+
+    if (WifiScanner) {
+      WifiScanner.stopScanning();
     }
+
+    this.lastScans = [];
   }
 
+  /**
+   * Get the last scanned networks
+   */
   getLastScans(): Network[] {
     return this.lastScans;
+  }
+
+  /**
+   * Get signal strength in bars (0-8)
+   */
+  getSignalBars(rssi: number): number {
+    if (rssi >= -50) return 8;
+    if (rssi >= -60) return 7;
+    if (rssi >= -70) return 6;
+    if (rssi >= -80) return 5;
+    if (rssi >= -90) return 4;
+    if (rssi >= -100) return 2;
+    return 0; // No signal
+  }
+
+  /**
+   * Get signal quality percentage
+   */
+  getSignalQuality(rssi: number): number {
+    const quality = 2 * (rssi + 100);
+    return Math.max(0, Math.min(100, quality));
   }
 }
 
