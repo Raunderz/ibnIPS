@@ -7,15 +7,17 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.ibnips.kotlinapp.core.theme.Dimens
-import com.ibnips.kotlinapp.presentation.components.ICPSButton
+import com.ibnips.kotlinapp.ui.components.ICPSButton
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -102,15 +104,56 @@ fun TagLocationScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            Text(
-                text = "Visible Networks (${uiState.visibleNetworks.size})",
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(bottom = 8.dp)
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Visible Networks (${uiState.visibleNetworks.size})",
+                    style = MaterialTheme.typography.titleMedium
+                )
+                if (uiState.isScanning) {
+                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                }
+            }
+            
+            if (uiState.isScanning && uiState.visibleNetworks.isEmpty()) {
+                LinearProgressIndicator(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+                )
+            } else {
+                Spacer(modifier = Modifier.height(8.dp))
+            }
 
-            LazyColumn(modifier = Modifier.weight(1f)) {
-                items(uiState.visibleNetworks) { network ->
-                    NetworkRow(network.ssid, network.rssi)
+            Box(modifier = Modifier.weight(1f)) {
+                if (uiState.visibleNetworks.isEmpty() && !uiState.isScanning) {
+                    Column(
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.Center,
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Warning,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(48.dp)
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = uiState.errorMessage ?: "No networks found. Ensure Location and Wi-Fi are enabled.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            textAlign = TextAlign.Center,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 32.dp)
+                        )
+                    }
+                } else {
+                    LazyColumn(modifier = Modifier.fillMaxSize()) {
+                        items(uiState.visibleNetworks) { network ->
+                            NetworkRow(network.ssid, network.rssi)
+                        }
+                    }
                 }
             }
 
@@ -133,7 +176,7 @@ fun NetworkRow(ssid: String, rssi: Int) {
         modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Text(text = "• $ssid", style = MaterialTheme.typography.bodyLarge)
+        Text(text = "• ${ssid.ifBlank { "Hidden Network" }}", style = MaterialTheme.typography.bodyLarge)
         Text(
             text = "$rssi dBm",
             style = MaterialTheme.typography.bodyMedium,
