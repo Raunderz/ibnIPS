@@ -24,39 +24,31 @@ import com.ibnips.kotlinapp.mock.MockDataProvider
 import com.ibnips.kotlinapp.permissions.PermissionManager
 import com.ibnips.kotlinapp.storage.PreferenceManager
 import com.ibnips.kotlinapp.utils.Constants
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
+import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.*
 import java.util.UUID
+import javax.inject.Inject
 
 /**
  * Foreground background service that periodically captures Wi-Fi + position data.
  */
+@AndroidEntryPoint
 class PositionService : Service() {
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    private lateinit var repository: Repository
-    private lateinit var preferenceManager: PreferenceManager
-    private lateinit var mockDataProvider: MockDataProvider
+    @Inject
+    lateinit var repository: Repository
+    @Inject
+    lateinit var preferenceManager: PreferenceManager
+    @Inject
+    lateinit var mockDataProvider: MockDataProvider
 
     private var updateJob: Job? = null
     private var lastNotificationText: String = "Idle"
 
     override fun onCreate() {
         super.onCreate()
-        preferenceManager = PreferenceManager(this)
-        mockDataProvider = MockDataProvider(this, preferenceManager)
-        repository = Repository(
-            context = this,
-            preferenceManager = preferenceManager,
-            mockDataProvider = mockDataProvider,
-        )
         createNotificationChannel()
     }
 
@@ -88,10 +80,6 @@ class PositionService : Service() {
         stopForegroundService()
         serviceScope.cancel()
         super.onDestroy()
-    }
-
-    override fun onTaskRemoved(rootIntent: Intent?) {
-        super.onTaskRemoved(rootIntent)
     }
 
     private fun startServiceLoop() {
@@ -200,25 +188,18 @@ class PositionService : Service() {
             ?: return null
 
         val providers = buildList {
-            if (manager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
-                add(LocationManager.GPS_PROVIDER)
-            }
-            if (manager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
-                add(LocationManager.NETWORK_PROVIDER)
-            }
+            if (manager.isProviderEnabled(LocationManager.GPS_PROVIDER)) add(LocationManager.GPS_PROVIDER)
+            if (manager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) add(LocationManager.NETWORK_PROVIDER)
         }
 
         for (provider in providers) {
             try {
                 @Suppress("MissingPermission")
                 val location = manager.getLastKnownLocation(provider)
-                if (location != null) {
-                    return location
-                }
+                if (location != null) return location
             } catch (_: SecurityException) {
                 return null
-            } catch (_: IllegalArgumentException) {
-            }
+            } catch (_: IllegalArgumentException) {}
         }
 
         return null
@@ -238,32 +219,24 @@ class PositionService : Service() {
     }
 
     private fun getOrCreateSessionId(): String {
-        val existing = preferenceManager.getString(KEY_SESSION_ID, null)
-        if (!existing.isNullOrBlank()) {
-            return existing
-        }
+        val existing = preferenceManager.getString("position_service_session_id", null)
+        if (!existing.isNullOrBlank()) return existing
 
         val generated = "session-${System.currentTimeMillis()}"
-        preferenceManager.saveString(KEY_SESSION_ID, generated)
+        preferenceManager.saveString("position_service_session_id", generated)
         return generated
     }
 
     private fun getResolvedDeviceId(): String {
-        val existing = preferenceManager.getString(KEY_DEVICE_ID, null)
-        if (!existing.isNullOrBlank()) {
-            return existing
-        }
+        val existing = preferenceManager.getString("position_service_device_id", null)
+        if (!existing.isNullOrBlank()) return existing
 
         val androidId = runCatching {
             Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID)
         }.getOrNull().orEmpty()
 
-        val resolved = when {
-            androidId.isNotBlank() -> androidId
-            else -> "device-${UUID.randomUUID()}"
-        }
-
-        preferenceManager.saveString(KEY_DEVICE_ID, resolved)
+        val resolved = if (androidId.isNotBlank()) androidId else "device-${UUID.randomUUID()}"
+        preferenceManager.saveString("position_service_device_id", resolved)
         return resolved
     }
 
@@ -295,12 +268,7 @@ class PositionService : Service() {
     private fun buildNotification(contentText: String): Notification {
         val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
         val pendingIntent = launchIntent?.let {
-            PendingIntent.getActivity(
-                this,
-                0,
-                it,
-                pendingIntentFlags(),
-            )
+            PendingIntent.getActivity(this, 0, it, pendingIntentFlags())
         }
 
         return NotificationCompat.Builder(this, Constants.Service.NOTIFICATION_CHANNEL_ID)
@@ -312,9 +280,7 @@ class PositionService : Service() {
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .apply {
-                if (pendingIntent != null) {
-                    setContentIntent(pendingIntent)
-                }
+                if (pendingIntent != null) setContentIntent(pendingIntent)
             }
             .build()
     }
@@ -323,10 +289,8 @@ class PositionService : Service() {
         if (contentText == lastNotificationText) return
         lastNotificationText = contentText
 
-        // Strict Rule: Explicit check for POST_NOTIFICATIONS on API 33+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ActivityCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-                Log.w(Constants.Logging.SERVICE, "Permission POST_NOTIFICATIONS not granted; skipping notification update.")
                 return
             }
         }
@@ -360,7 +324,7 @@ class PositionService : Service() {
     }
 
     private fun logError(message: String, throwable: Throwable?) {
-        Log.e(Constants.Logging.SERVICE, message, throwable)
+        Log.e("PositionService", message, throwable)
     }
 
     private fun logRepositoryError(error: Repository.RepositoryError) {
@@ -385,9 +349,6 @@ class PositionService : Service() {
     }
 
     companion object {
-        private const val KEY_SESSION_ID = "position_service_session_id"
-        private const val KEY_DEVICE_ID = "position_service_device_id"
-
         fun createStartIntent(context: Context): Intent {
             return Intent(context, PositionService::class.java).apply {
                 action = Constants.Service.ACTION_START

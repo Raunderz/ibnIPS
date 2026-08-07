@@ -1,6 +1,5 @@
 package com.ibnips.kotlinapp.api
 
-import android.content.Context
 import com.ibnips.kotlinapp.mock.MockDataProvider
 import com.ibnips.kotlinapp.storage.PreferenceManager
 import com.ibnips.kotlinapp.wifi.WifiResult
@@ -22,14 +21,17 @@ import org.junit.Test
 class RepositoryTest {
 
     private lateinit var repository: Repository
-    private val context = mockk<Context>(relaxed = true)
     private val preferenceManager = mockk<PreferenceManager>(relaxed = true)
     private val wifiScanner = mockk<WifiScanner>(relaxed = true)
     private val mockDataProvider = mockk<MockDataProvider>(relaxed = true)
 
     @Before
     fun setup() {
-        repository = Repository(context, preferenceManager, wifiScanner, mockDataProvider)
+        repository = Repository(
+            preferenceManager = preferenceManager,
+            wifiScanner = wifiScanner,
+            mockDataProvider = mockDataProvider
+        )
     }
 
     /**

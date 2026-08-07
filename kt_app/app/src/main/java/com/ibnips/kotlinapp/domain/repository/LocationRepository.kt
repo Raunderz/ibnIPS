@@ -5,4 +5,5 @@ import kotlinx.coroutines.flow.Flow
 
 interface LocationRepository {
     fun getPositionUpdates(): Flow<Position>
+    suspend fun forceRefresh()
 }

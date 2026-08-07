@@ -21,6 +21,7 @@ class PositionRepository @Inject constructor(
     private val wifiScanner: WifiScanner
 ) {
     private var currentMockScenario = MockScenario.LAB_201
+    private var lastValidPosition: Position? = null
 
     fun injectMockScenario(scenario: MockScenario) {
         currentMockScenario = scenario
@@ -36,35 +37,43 @@ class PositionRepository @Inject constructor(
             flow {
                 while (true) {
                     if (isMock) {
-                        emit(MockDataService.scenario(currentMockScenario))
+                        val pos = MockDataService.scenario(currentMockScenario)
+                        lastValidPosition = pos
+                        emit(pos)
                     } else {
-                        // Perform a real Wi-Fi scan
                         val outcome = wifiScanner.scanNearbyNetworks(forceRefresh = true)
                         
-                        when (outcome) {
+                        val currentPosition = when (outcome) {
                             is WifiScanner.WifiScanOutcome.Success -> {
                                 val strongest = outcome.results.maxByOrNull { it.rssi }
                                 val ssid = strongest?.ssid ?: "Unknown Network"
+                                val tag = if (outcome.fromCache) "Cached" else "Real"
                                 
-                                // Logic for real-time position reporting
-                                emit(Position(
-                                    floor = 1, // Defaulting to floor 1 until we have a map-aware engine
+                                Position(
+                                    floor = 1,
                                     x = 0.5f,
                                     y = 0.5f,
                                     confidence = 95,
-                                    roomName = "Near $ssid (Real)"
-                                ))
+                                    roomName = "Near $ssid ($tag)"
+                                )
                             }
                             is WifiScanner.WifiScanOutcome.Failure -> {
-                                emit(Position(
-                                    floor = 0,
-                                    x = 0f,
-                                    y = 0f,
-                                    confidence = 0,
-                                    roomName = "Scan Error: ${outcome.reason}"
-                                ))
+                                // Gracefully handle throttling by using last known position
+                                lastValidPosition?.copy(roomName = "${lastValidPosition?.roomName} (Updating)")
+                                    ?: Position(
+                                        floor = 0,
+                                        x = 0f,
+                                        y = 0f,
+                                        confidence = 0,
+                                        roomName = "Locating..."
+                                    )
                             }
                         }
+                        
+                        if (currentPosition.confidence > 0) {
+                            lastValidPosition = currentPosition
+                        }
+                        emit(currentPosition)
                     }
                     delay(freq)
                 }
