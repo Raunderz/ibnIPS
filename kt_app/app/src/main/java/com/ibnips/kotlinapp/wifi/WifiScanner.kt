@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.net.wifi.ScanResult
 import android.net.wifi.WifiManager
+import android.os.SystemClock
 import com.ibnips.kotlinapp.permissions.PermissionManager
 import com.ibnips.kotlinapp.utils.Constants
 import kotlinx.coroutines.CancellationException
@@ -16,252 +17,112 @@ import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.resume
 
-/**
- * Production-ready Wi-Fi scanner for the Android native layer.
- */
 class WifiScanner(private val context: Context) {
-
     private val appContext: Context = context.applicationContext
 
     sealed class WifiScanOutcome {
-        data class Success(
-            val results: List<WifiResult>,
-            val fromCache: Boolean = false,
-        ) : WifiScanOutcome()
-
+        data class Success(val results: List<WifiResult>, val fromCache: Boolean = false) : WifiScanOutcome()
         data class Failure(
             val reason: WifiScanFailureReason,
             val message: String,
             val cachedResults: List<WifiResult> = emptyList(),
-            val throwable: Throwable? = null,
+            val throwable: Throwable? = null
         ) : WifiScanOutcome()
     }
 
     enum class WifiScanFailureReason {
-        WIFI_MANAGER_UNAVAILABLE,
-        PERMISSION_DENIED,
-        WIFI_DISABLED,
-        LOCATION_DISABLED,
-        SCAN_THROTTLED,
-        START_SCAN_FAILED,
-        TIMEOUT,
-        SECURITY_EXCEPTION,
-        CANCELLED,
-        UNKNOWN,
+        WIFI_MANAGER_UNAVAILABLE, PERMISSION_DENIED, WIFI_DISABLED, LOCATION_DISABLED, SCAN_THROTTLED, START_SCAN_FAILED, TIMEOUT, SECURITY_EXCEPTION, CANCELLED, UNKNOWN
     }
 
-    suspend fun scanNearbyNetworks(forceRefresh: Boolean = true): WifiScanOutcome {
-        return withContext(Dispatchers.IO) {
-            val validationFailure = validateScanPrerequisites()
-            if (validationFailure != null) {
-                return@withContext validationFailure
-            }
+    suspend fun scanNearbyNetworks(forceRefresh: Boolean = true): WifiScanOutcome = withContext(Dispatchers.IO) {
+        val validationFailure = validateScanPrerequisites()
+        if (validationFailure != null) return@withContext validationFailure
 
-            if (!forceRefresh) {
-                return@withContext WifiScanOutcome.Success(
-                    results = getCachedScanResults(),
-                    fromCache = true,
-                )
-            }
+        val wifiManager = getWifiManager() ?: return@withContext WifiScanOutcome.Failure(WifiScanFailureReason.WIFI_MANAGER_UNAVAILABLE, "WifiManager missing")
 
+        if (forceRefresh) {
             val timeoutMs = Constants.Wifi.SCAN_TIMEOUT_MS
-            val scanOutcome = withTimeoutOrNull(timeoutMs) {
-                performLiveScan()
-            }
-
+            val scanOutcome = withTimeoutOrNull(timeoutMs) { performLiveScan(wifiManager) }
+            // If live scan timed out, return failure with cache but mark it as failure
             scanOutcome ?: WifiScanOutcome.Failure(
                 reason = WifiScanFailureReason.TIMEOUT,
-                message = "Wi-Fi scan timed out after ${timeoutMs}ms.",
-                cachedResults = getCachedScanResults(),
+                message = "Live scan timed out",
+                cachedResults = readSystemScanResults()
             )
+        } else {
+            WifiScanOutcome.Success(readSystemScanResults(), fromCache = true)
         }
     }
 
-    fun getCachedScanResults(): List<WifiResult> {
-        return runCatching {
-            readSystemScanResults()
-        }.getOrElse {
-            emptyList()
+    fun getCachedScanResults(): List<WifiResult> = readSystemScanResults()
+
+    private suspend fun performLiveScan(wifiManager: WifiManager): WifiScanOutcome = suspendCancellableCoroutine { continuation ->
+        val hasResumed = AtomicBoolean(false)
+        var receiver: BroadcastReceiver? = null
+
+        fun resumeOnce(outcome: WifiScanOutcome) {
+            if (hasResumed.compareAndSet(false, true)) {
+                receiver?.let { runCatching { appContext.unregisterReceiver(it) } }
+                if (continuation.isActive) continuation.resume(outcome)
+            }
         }
-    }
 
-    fun canScanNow(): Boolean {
-        val wifiManager = getWifiManager() ?: return false
-        return PermissionManager.hasRequiredPermissions(appContext) &&
-            PermissionManager.isLocationServicesEnabled(appContext) &&
-            isWifiEnabledOrScanAvailable(wifiManager)
-    }
-
-    private suspend fun performLiveScan(): WifiScanOutcome {
-        val wifiManager = getWifiManager()
-            ?: return WifiScanOutcome.Failure(
-                reason = WifiScanFailureReason.WIFI_MANAGER_UNAVAILABLE,
-                message = "Wi-Fi service is unavailable on this device.",
-            )
-
-        return suspendCancellableCoroutine { continuation ->
-            val hasResumed = AtomicBoolean(false)
-            var receiver: BroadcastReceiver? = null
-
-            fun cleanup() {
-                receiver?.let {
-                    runCatching { appContext.unregisterReceiver(it) }
-                    receiver = null
+        receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                // Requirement: Only consider scan successful if system actually refreshed data
+                val updated = intent?.getBooleanExtra(WifiManager.EXTRA_RESULTS_UPDATED, false) ?: false
+                if (updated) {
+                    resumeOnce(WifiScanOutcome.Success(readSystemScanResults(), fromCache = false))
+                } else {
+                    // System was throttled, returned stale data
+                    resumeOnce(WifiScanOutcome.Failure(
+                        reason = WifiScanFailureReason.SCAN_THROTTLED,
+                        message = "Android system returned cached results (Throttled)",
+                        cachedResults = readSystemScanResults()
+                    ))
                 }
             }
+        }
 
-            fun resumeOnce(outcome: WifiScanOutcome) {
-                if (hasResumed.compareAndSet(false, true)) {
-                    cleanup()
-                    if (continuation.isActive) {
-                        continuation.resume(outcome)
-                    }
-                }
-            }
-
-            receiver = object : BroadcastReceiver() {
-                override fun onReceive(context: Context?, intent: Intent?) {
-                    val updated = intent?.getBooleanExtra(
-                        WifiManager.EXTRA_RESULTS_UPDATED,
-                        false,
-                    ) ?: false
-
-                    if (updated) {
-                        resumeOnce(
-                            WifiScanOutcome.Success(
-                                results = readSystemScanResults(),
-                                fromCache = false,
-                            ),
-                        )
-                    } else {
-                        resumeOnce(
-                            WifiScanOutcome.Failure(
-                                reason = WifiScanFailureReason.SCAN_THROTTLED,
-                                message = "Wi-Fi scan completed, but the system reported no updated results.",
-                                cachedResults = getCachedScanResults(),
-                            ),
-                        )
-                    }
-                }
-            }
-
-            continuation.invokeOnCancellation {
-                cleanup()
-            }
-
-            try {
-                @Suppress("DEPRECATION")
-                appContext.registerReceiver(
-                    receiver,
-                    IntentFilter(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION),
-                )
-
-                val started = runCatching { wifiManager.startScan() }
-                    .getOrElse { throwable ->
-                        resumeOnce(mapThrowableToFailure(throwable))
-                        return@suspendCancellableCoroutine
-                    }
-
-                if (!started) {
-                    resumeOnce(
-                        WifiScanOutcome.Failure(
-                            reason = WifiScanFailureReason.START_SCAN_FAILED,
-                            message = "Wi-Fi scan request was rejected by the platform.",
-                            cachedResults = getCachedScanResults(),
-                        ),
-                    )
-                }
-            } catch (throwable: Throwable) {
-                resumeOnce(mapThrowableToFailure(throwable))
-            }
+        appContext.registerReceiver(receiver, IntentFilter(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION))
+        
+        val started = runCatching { wifiManager.startScan() }.getOrDefault(false)
+        if (!started) {
+            // Immediate throttle
+            resumeOnce(WifiScanOutcome.Failure(
+                reason = WifiScanFailureReason.SCAN_THROTTLED,
+                message = "Scan request rejected by system",
+                cachedResults = readSystemScanResults()
+            ))
         }
     }
 
     private fun validateScanPrerequisites(): WifiScanOutcome.Failure? {
-        val wifiManager = getWifiManager()
-            ?: return WifiScanOutcome.Failure(
-                reason = WifiScanFailureReason.WIFI_MANAGER_UNAVAILABLE,
-                message = "Wi-Fi service is unavailable on this device.",
-            )
-
-        if (!PermissionManager.hasRequiredPermissions(appContext)) {
-            return WifiScanOutcome.Failure(
-                reason = WifiScanFailureReason.PERMISSION_DENIED,
-                message = "Required runtime permissions are missing for Wi-Fi scanning.",
-            )
-        }
-
-        if (!PermissionManager.isLocationServicesEnabled(appContext)) {
-            return WifiScanOutcome.Failure(
-                reason = WifiScanFailureReason.LOCATION_DISABLED,
-                message = "Location services are disabled, so Wi-Fi scan results are unavailable.",
-            )
-        }
-
-        if (!isWifiEnabledOrScanAvailable(wifiManager)) {
-            return WifiScanOutcome.Failure(
-                reason = WifiScanFailureReason.WIFI_DISABLED,
-                message = "Wi-Fi is disabled and scan mode is not available.",
-            )
-        }
-
+        if (!PermissionManager.hasRequiredPermissions(appContext)) return WifiScanOutcome.Failure(WifiScanFailureReason.PERMISSION_DENIED, "Permissions missing")
+        if (!PermissionManager.isLocationServicesEnabled(appContext)) return WifiScanOutcome.Failure(WifiScanFailureReason.LOCATION_DISABLED, "Location disabled")
         return null
     }
 
     private fun readSystemScanResults(): List<WifiResult> {
-        val wifiManager = getWifiManager()
-            ?: return emptyList()
-
-        return runCatching {
+        val wifiManager = getWifiManager() ?: return emptyList()
+        return try {
             @Suppress("MissingPermission")
-            val now = System.currentTimeMillis()
-            wifiManager.scanResults
-                .asSequence()
-                .map { scanResult -> scanResult.toWifiResult(now) }
-                .filter { it.isValid }
-                .distinctBy { it.bssid }
-                .sortedByDescending { it.rssi }
-                .take(Constants.Wifi.MAX_RESULTS_LIMIT)
-                .toList()
-        }.getOrElse {
-            emptyList()
-        }
+            val results = wifiManager.scanResults
+            val nowMs = System.currentTimeMillis()
+            val bootTimeMs = SystemClock.elapsedRealtime()
+            
+            results.map { 
+                // Hardware timestamp sync: convert microseconds since boot to wall clock millis
+                val ageMs = bootTimeMs - (it.timestamp / 1000)
+                val actualTimestamp = nowMs - ageMs
+                it.toWifiResult(actualTimestamp) 
+            }
+            .distinctBy { it.bssid }
+            .sortedByDescending { it.rssi }
+            .take(Constants.Wifi.MAX_RESULTS_LIMIT)
+        } catch (e: Exception) { emptyList() }
     }
 
-    private fun isWifiEnabledOrScanAvailable(wifiManager: WifiManager): Boolean {
-        @Suppress("DEPRECATION")
-        val enabled = wifiManager.isWifiEnabled
-        return enabled || wifiManager.isScanAlwaysAvailable
-    }
-
-    private fun getWifiManager(): WifiManager? {
-        return appContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
-    }
-
-    private fun mapThrowableToFailure(throwable: Throwable): WifiScanOutcome.Failure {
-        return when (throwable) {
-            is SecurityException -> WifiScanOutcome.Failure(
-                reason = WifiScanFailureReason.SECURITY_EXCEPTION,
-                message = "Wi-Fi scan failed because the app does not hold the required permission.",
-                cachedResults = getCachedScanResults(),
-                throwable = throwable,
-            )
-            is CancellationException -> WifiScanOutcome.Failure(
-                reason = WifiScanFailureReason.CANCELLED,
-                message = "Wi-Fi scan was cancelled.",
-                cachedResults = getCachedScanResults(),
-                throwable = throwable,
-            )
-            else -> WifiScanOutcome.Failure(
-                reason = WifiScanFailureReason.UNKNOWN,
-                message = throwable.message ?: "Unexpected Wi-Fi scan failure.",
-                cachedResults = getCachedScanResults(),
-                throwable = throwable,
-            )
-        }
-    }
-
-    private fun ScanResult.toWifiResult(timestamp: Long): WifiResult {
-        return WifiResult.fromScanResult(this, timestamp)
-    }
+    private fun getWifiManager(): WifiManager? = appContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+    private fun ScanResult.toWifiResult(timestamp: Long): WifiResult = WifiResult.fromScanResult(this, timestamp)
 }

@@ -1,5 +1,6 @@
 package com.ibnips.kotlinapp.presentation.tag
 
+import com.ibnips.kotlinapp.domain.model.Position
 import com.ibnips.kotlinapp.domain.model.Room
 import com.ibnips.kotlinapp.domain.model.WifiNetwork
 
@@ -14,6 +15,7 @@ data class TagUiState(
     val availableRooms: List<Room> = emptyList(),
     val selectedRoom: Room? = null,
     val visibleNetworks: List<WifiNetwork> = emptyList(),
+    val currentPosition: Position? = null,
     val uploadState: UploadState = UploadState.Idle,
     val isScanning: Boolean = false,
     val errorMessage: String? = null

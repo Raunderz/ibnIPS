@@ -1,8 +1,8 @@
 package com.ibnips.kotlinapp.ui.screens.map
 
 import app.cash.turbine.test
-import com.ibnips.kotlinapp.data.repository.PositionRepository
 import com.ibnips.kotlinapp.domain.model.Position
+import com.ibnips.kotlinapp.domain.repository.LocationRepository
 import com.ibnips.kotlinapp.domain.repository.SettingsRepository
 import com.ibnips.kotlinapp.util.MainDispatcherRule
 import io.mockk.every
@@ -22,7 +22,7 @@ class MapViewModelTest {
     val mainDispatcherRule = MainDispatcherRule()
 
     private lateinit var viewModel: MapViewModel
-    private val positionRepository = mockk<PositionRepository>(relaxed = true)
+    private val locationRepository = mockk<LocationRepository>(relaxed = true)
     private val settingsRepository = mockk<SettingsRepository>(relaxed = true)
 
     private val positionFlow = MutableStateFlow(Position(1, 0.5f, 0.5f, 90, "Lab 201"))
@@ -30,10 +30,10 @@ class MapViewModelTest {
 
     @Before
     fun setup() {
-        every { positionRepository.getPositionUpdates() } returns positionFlow
+        every { locationRepository.getPositionUpdates() } returns positionFlow
         every { settingsRepository.mockModeEnabled } returns mockModeFlow
         
-        viewModel = MapViewModel(positionRepository, settingsRepository)
+        viewModel = MapViewModel(locationRepository, settingsRepository)
     }
 
     @Test
@@ -55,9 +55,6 @@ class MapViewModelTest {
     @Test
     fun `refreshPosition triggers loading state`() = runTest {
         viewModel.refreshPosition()
-        // Note: Due to the delay in ViewModel, we might need to advance time if using a real dispatcher,
-        // but with UnconfinedTestDispatcher in Rule, it might be instantaneous or we might need to wait.
-        // Actually, refreshPosition has a 500ms delay.
         
         assertTrue(viewModel.uiState.value.isUpdating)
         mainDispatcherRule.testDispatcher.scheduler.advanceTimeBy(501)

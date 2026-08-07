@@ -6,5 +6,6 @@ data class Position(
     val y: Float, // Normalized 0.0 to 1.0
     val confidence: Int,
     val roomName: String? = null,
+    val isFromTag: Boolean = false,
     val timestamp: Long = System.currentTimeMillis()
 )

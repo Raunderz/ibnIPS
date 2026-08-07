@@ -1,40 +1,26 @@
 package com.ibnips.kotlinapp.storage
 
 import android.content.Context
-import android.content.SharedPreferences
+import com.ibnips.kotlinapp.domain.model.Fingerprint
+import com.ibnips.kotlinapp.domain.model.WifiNetwork
 import com.ibnips.kotlinapp.utils.Constants
 import com.ibnips.kotlinapp.wifi.WifiResult
+import dagger.hilt.android.qualifiers.ApplicationContext
 import org.json.JSONArray
 import org.json.JSONObject
+import javax.inject.Inject
+import javax.inject.Singleton
 
-/**
- * SharedPreferences-backed persistence layer for the Android native module.
- *
- * Responsibilities:
- * - store and read mock mode state
- * - persist user settings safely as JSON
- * - cache the last Wi-Fi scan result list
- * - cache the last known location snapshot
- * - store lightweight preferences needed by the service and bridge
- * - keep all keys centralized through Constants
- *
- * This class intentionally avoids UI concerns and can be used by:
- * - WifiBridgeModule
- * - PositionService
- * - Repository
- * - MockDataProvider
- */
-class PreferenceManager(context: Context) {
+@Singleton
+class PreferenceManager @Inject constructor(
+    @ApplicationContext private val context: Context
+) {
 
-    private val appContext = context.applicationContext
-    private val preferences: SharedPreferences = appContext.getSharedPreferences(
+    private val preferences = context.getSharedPreferences(
         Constants.Storage.PREFS_NAME,
         Context.MODE_PRIVATE,
     )
 
-    /**
-     * Lightweight representation of the last stored location snapshot.
-     */
     data class StoredLocation(
         val latitude: Double,
         val longitude: Double,
@@ -43,12 +29,12 @@ class PreferenceManager(context: Context) {
     ) {
         fun toJson(): JSONObject {
             return JSONObject()
-                .put(KEY_LATITUDE, latitude)
-                .put(KEY_LONGITUDE, longitude)
-                .put(KEY_TIMESTAMP, timestamp)
+                .put("latitude", latitude)
+                .put("longitude", longitude)
+                .put("timestamp", timestamp)
                 .apply {
                     if (accuracy != null) {
-                        put(KEY_ACCURACY, accuracy.toDouble())
+                        put("accuracy", accuracy.toDouble())
                     }
                 }
         }
@@ -56,66 +42,25 @@ class PreferenceManager(context: Context) {
         companion object {
             fun fromJson(json: JSONObject): StoredLocation {
                 return StoredLocation(
-                    latitude = json.optDouble(KEY_LATITUDE, 0.0),
-                    longitude = json.optDouble(KEY_LONGITUDE, 0.0),
-                    accuracy = if (json.has(KEY_ACCURACY) && !json.isNull(KEY_ACCURACY)) {
-                        json.optDouble(KEY_ACCURACY, 0.0).toFloat()
+                    latitude = json.optDouble("latitude", 0.0),
+                    longitude = json.optDouble("longitude", 0.0),
+                    accuracy = if (json.has("accuracy") && !json.isNull("accuracy")) {
+                        json.optDouble("accuracy", 0.0).toFloat()
                     } else {
                         null
                     },
-                    timestamp = json.optLong(KEY_TIMESTAMP, 0L),
+                    timestamp = json.optLong("timestamp", 0L),
                 )
             }
         }
     }
 
-    fun isMockModeEnabled(): Boolean {
-        return preferences.getBoolean(Constants.Storage.KEY_MOCK_MODE, false)
-    }
-
-    fun setMockModeEnabled(enabled: Boolean) {
-        preferences.edit().putBoolean(Constants.Storage.KEY_MOCK_MODE, enabled).apply()
-    }
-
-    fun saveUserSettings(settings: JSONObject) {
-        preferences.edit()
-            .putString(Constants.Storage.KEY_USER_SETTINGS, settings.toString())
-            .apply()
-    }
-
-    fun saveUserSettings(settings: Map<String, Any?>) {
-        val json = JSONObject()
-        settings.forEach { (key, value) ->
-            putJsonValue(json, key, value)
-        }
-        saveUserSettings(json)
-    }
-
-    fun getUserSettings(): JSONObject {
-        val raw = preferences.getString(Constants.Storage.KEY_USER_SETTINGS, null)
-        return if (raw.isNullOrBlank()) {
-            JSONObject()
-        } else {
-            runCatching { JSONObject(raw) }.getOrElse { JSONObject() }
-        }
-    }
-
-    fun getUserSetting(key: String, defaultValue: String = ""): String {
-        return getUserSettings().optString(key, defaultValue)
-    }
-
-    fun putUserSetting(key: String, value: Any?) {
-        val json = getUserSettings()
-        putJsonValue(json, key, value)
-        saveUserSettings(json)
-    }
+    fun isMockModeEnabled(): Boolean = preferences.getBoolean(Constants.Storage.KEY_MOCK_MODE, false)
+    fun setMockModeEnabled(enabled: Boolean) = preferences.edit().putBoolean(Constants.Storage.KEY_MOCK_MODE, enabled).apply()
 
     fun saveLastScan(results: List<WifiResult>) {
         val payload = JSONArray()
-        results.forEach { result ->
-            payload.put(result.toJsonObject())
-        }
-
+        results.forEach { payload.put(it.toJsonObject()) }
         preferences.edit()
             .putString(Constants.Storage.KEY_LAST_SCAN, payload.toString())
             .putLong(Constants.Storage.KEY_LAST_SYNC_TIME, System.currentTimeMillis())
@@ -123,147 +68,129 @@ class PreferenceManager(context: Context) {
     }
 
     fun getLastScan(): List<WifiResult> {
-        val raw = preferences.getString(Constants.Storage.KEY_LAST_SCAN, null)
-            ?: return emptyList()
-
+        val raw = preferences.getString(Constants.Storage.KEY_LAST_SCAN, null) ?: return emptyList()
         return runCatching {
             val array = JSONArray(raw)
             buildList {
-                for (index in 0 until array.length()) {
-                    val item = array.optJSONObject(index) ?: continue
+                for (i in 0 until array.length()) {
+                    val item = array.optJSONObject(i) ?: continue
                     add(WifiResult.fromJson(item))
                 }
             }
-        }.getOrElse {
-            emptyList()
+        }.getOrElse { emptyList() }
+    }
+
+    fun getLastSyncTime(): Long = preferences.getLong(Constants.Storage.KEY_LAST_SYNC_TIME, 0L)
+
+    fun saveFingerprint(fingerprint: Fingerprint) {
+        val fingerprints = getFingerprints().toMutableList()
+        fingerprints.removeAll { it.roomId == fingerprint.roomId }
+        fingerprints.add(fingerprint)
+        saveFingerprintList(fingerprints)
+    }
+
+    fun deleteFingerprint(roomId: String) {
+        val fingerprints = getFingerprints().toMutableList()
+        fingerprints.removeAll { it.roomId == roomId }
+        saveFingerprintList(fingerprints)
+    }
+
+    fun clearAllFingerprints() {
+        preferences.edit().remove("key_fingerprints").apply()
+    }
+
+    private fun saveFingerprintList(fingerprints: List<Fingerprint>) {
+        val array = JSONArray()
+        fingerprints.forEach { fp ->
+            val obj = JSONObject().apply {
+                put("roomId", fp.roomId)
+                put("roomName", fp.roomName)
+                put("floor", fp.floor)
+                put("x", fp.x?.toDouble() ?: JSONObject.NULL)
+                put("y", fp.y?.toDouble() ?: JSONObject.NULL)
+                put("timestamp", fp.timestamp)
+                val wifiArray = JSONArray()
+                fp.wifiResults.forEach { net ->
+                    wifiArray.put(JSONObject().apply {
+                        put("ssid", net.ssid)
+                        put("bssid", net.bssid)
+                        put("rssi", net.rssi)
+                    })
+                }
+                put("wifiResults", wifiArray)
+            }
+            array.put(obj)
         }
+        preferences.edit().putString("key_fingerprints", array.toString()).apply()
     }
 
-    fun clearLastScan() {
-        preferences.edit()
-            .remove(Constants.Storage.KEY_LAST_SCAN)
-            .remove(Constants.Storage.KEY_LAST_SYNC_TIME)
-            .apply()
+    fun getFingerprints(): List<Fingerprint> {
+        val raw = preferences.getString("key_fingerprints", null) ?: return emptyList()
+        return runCatching {
+            val array = JSONArray(raw)
+            buildList {
+                for (i in 0 until array.length()) {
+                    val obj = array.optJSONObject(i) ?: continue
+                    val wifiArray = obj.optJSONArray("wifiResults") ?: JSONArray()
+                    val wifiResults = buildList {
+                        for (j in 0 until wifiArray.length()) {
+                            val w = wifiArray.optJSONObject(j) ?: continue
+                            add(WifiNetwork(w.getString("ssid"), w.getString("bssid"), w.getInt("rssi")))
+                        }
+                    }
+                    add(Fingerprint(
+                        roomId = obj.getString("roomId"),
+                        roomName = obj.getString("roomName"),
+                        floor = obj.getInt("floor"),
+                        x = if (obj.has("x") && !obj.isNull("x")) obj.getDouble("x").toFloat() else null,
+                        y = if (obj.has("y") && !obj.isNull("y")) obj.getDouble("y").toFloat() else null,
+                        wifiResults = wifiResults,
+                        timestamp = obj.getLong("timestamp")
+                    ))
+                }
+            }
+        }.getOrElse { emptyList() }
     }
 
-    fun getLastScanTimestamp(): Long {
-        return preferences.getLong(Constants.Storage.KEY_LAST_SYNC_TIME, 0L)
-    }
-
-    fun saveLastLocation(
-        latitude: Double,
-        longitude: Double,
-        accuracy: Float? = null,
-        timestamp: Long = System.currentTimeMillis(),
-    ) {
-        val snapshot = StoredLocation(
-            latitude = latitude,
-            longitude = longitude,
-            accuracy = accuracy,
-            timestamp = timestamp,
-        )
-
-        preferences.edit()
-            .putString(Constants.Storage.KEY_LAST_LOCATION, snapshot.toJson().toString())
-            .apply()
+    fun saveLastLocation(latitude: Double, longitude: Double, accuracy: Float? = null, timestamp: Long = System.currentTimeMillis()) {
+        val snapshot = StoredLocation(latitude, longitude, accuracy, timestamp)
+        preferences.edit().putString(Constants.Storage.KEY_LAST_LOCATION, snapshot.toJson().toString()).apply()
     }
 
     fun getLastLocation(): StoredLocation? {
-        val raw = preferences.getString(Constants.Storage.KEY_LAST_LOCATION, null)
-            ?: return null
-
-        return runCatching { StoredLocation.fromJson(JSONObject(raw)) }
-            .getOrNull()
+        val raw = preferences.getString(Constants.Storage.KEY_LAST_LOCATION, null) ?: return null
+        return runCatching { StoredLocation.fromJson(JSONObject(raw)) }.getOrNull()
     }
 
-    fun clearLastLocation() {
-        preferences.edit()
-            .remove(Constants.Storage.KEY_LAST_LOCATION)
-            .apply()
+    fun getUserSettings(): JSONObject {
+        val raw = preferences.getString(Constants.Storage.KEY_USER_SETTINGS, "{}")
+        return runCatching { JSONObject(raw) }.getOrDefault(JSONObject("{}"))
     }
 
-    fun saveApiBaseUrl(baseUrl: String) {
-        preferences.edit()
-            .putString(Constants.Storage.KEY_API_BASE_URL, baseUrl.trim())
-            .apply()
+    fun saveUserSettings(settings: JSONObject) {
+        preferences.edit().putString(Constants.Storage.KEY_USER_SETTINGS, settings.toString()).apply()
     }
 
-    fun getApiBaseUrl(): String {
-        return preferences.getString(Constants.Storage.KEY_API_BASE_URL, Constants.Api.DEFAULT_BASE_URL)
-            ?: Constants.Api.DEFAULT_BASE_URL
+    fun putUserSetting(key: String, value: Any?) {
+        val json = getUserSettings()
+        when (value) {
+            is Boolean -> json.put(key, value)
+            is Int -> json.put(key, value)
+            is Long -> json.put(key, value)
+            is Double -> json.put(key, value)
+            is Float -> json.put(key, value.toDouble())
+            else -> json.put(key, value.toString())
+        }
+        saveUserSettings(json)
     }
 
-    fun saveString(key: String, value: String?) {
-        preferences.edit().putString(key, value).apply()
-    }
+    fun getString(key: String, defaultValue: String?): String? = preferences.getString(key, defaultValue)
+    fun saveString(key: String, value: String?) = preferences.edit().putString(key, value).apply()
 
-    fun getString(key: String, defaultValue: String? = null): String? {
-        return preferences.getString(key, defaultValue)
-    }
-
-    fun saveBoolean(key: String, value: Boolean) {
-        preferences.edit().putBoolean(key, value).apply()
-    }
-
-    fun getBoolean(key: String, defaultValue: Boolean = false): Boolean {
-        return preferences.getBoolean(key, defaultValue)
-    }
-
-    fun saveLong(key: String, value: Long) {
-        preferences.edit().putLong(key, value).apply()
-    }
-
-    fun getLong(key: String, defaultValue: Long = 0L): Long {
-        return preferences.getLong(key, defaultValue)
-    }
-
-    fun saveInt(key: String, value: Int) {
-        preferences.edit().putInt(key, value).apply()
-    }
-
-    fun getInt(key: String, defaultValue: Int = 0): Int {
-        return preferences.getInt(key, defaultValue)
-    }
-
-    fun remove(key: String) {
-        preferences.edit().remove(key).apply()
-    }
+    fun saveApiBaseUrl(url: String) = preferences.edit().putString(Constants.Storage.KEY_API_BASE_URL, url.trim()).apply()
+    fun getApiBaseUrl(): String = preferences.getString(Constants.Storage.KEY_API_BASE_URL, Constants.Api.DEFAULT_BASE_URL) ?: Constants.Api.DEFAULT_BASE_URL
 
     fun clearAll() {
         preferences.edit().clear().apply()
     }
-
-    fun contains(key: String): Boolean {
-        return preferences.contains(key)
-    }
-
-    fun getLastSyncTime(): Long {
-        return preferences.getLong(Constants.Storage.KEY_LAST_SYNC_TIME, 0L)
-    }
-
-    private fun putJsonValue(json: JSONObject, key: String, value: Any?) {
-        when (value) {
-            null -> json.put(key, JSONObject.NULL)
-            is Boolean -> json.put(key, value)
-            is Int -> json.put(key, value)
-            is Long -> json.put(key, value)
-            is Float -> json.put(key, value.toDouble())
-            is Double -> json.put(key, value)
-            is Number -> json.put(key, value)
-            is String -> json.put(key, value)
-            is JSONObject -> json.put(key, value)
-            is JSONArray -> json.put(key, value)
-            is Map<*, *> -> json.put(key, JSONObject(value))
-            is Iterable<*> -> json.put(key, JSONArray(value))
-            else -> json.put(key, value.toString())
-        }
-    }
-
-    companion object {
-        private const val KEY_LATITUDE = "latitude"
-        private const val KEY_LONGITUDE = "longitude"
-        private const val KEY_ACCURACY = "accuracy"
-        private const val KEY_TIMESTAMP = "timestamp"
-    }
 }
-
