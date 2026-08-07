@@ -4,6 +4,7 @@ import app.cash.turbine.test
 import com.ibnips.kotlinapp.domain.model.MockScenario
 import com.ibnips.kotlinapp.domain.repository.SettingsRepository
 import com.ibnips.kotlinapp.util.MainDispatcherRule
+import com.ibnips.kotlinapp.wifi.WifiScanner
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -28,6 +29,7 @@ class PositionRepositoryTest {
 
     private lateinit var repository: PositionRepository
     private val settingsRepository = mockk<SettingsRepository>()
+    private val wifiScanner = mockk<WifiScanner>(relaxed = true)
     
     private val mockModeEnabled = MutableStateFlow(false)
     private val positionUpdateFreq = MutableStateFlow(1000L)
@@ -37,7 +39,7 @@ class PositionRepositoryTest {
         every { settingsRepository.mockModeEnabled } returns mockModeEnabled
         every { settingsRepository.positionUpdateFreq } returns positionUpdateFreq
         
-        repository = PositionRepository(settingsRepository)
+        repository = PositionRepository(settingsRepository, wifiScanner)
     }
 
     /**
