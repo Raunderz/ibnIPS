@@ -3,7 +3,7 @@ package com.ibnips.kotlinapp.ui.screens.map
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ibnips.kotlinapp.domain.model.Position
-import com.ibnips.kotlinapp.data.repository.PositionRepository
+import com.ibnips.kotlinapp.domain.repository.LocationRepository
 import com.ibnips.kotlinapp.domain.repository.SettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -15,7 +15,7 @@ import javax.inject.Inject
 
 @HiltViewModel
 class MapViewModel @Inject constructor(
-    private val positionRepository: PositionRepository,
+    private val locationRepository: LocationRepository,
     private val settingsRepository: SettingsRepository
 ) : ViewModel() {
 
@@ -30,7 +30,7 @@ class MapViewModel @Inject constructor(
     private fun observePositionUpdates() {
         viewModelScope.launch {
             _uiState.update { it.copy(isUpdating = true) }
-            positionRepository.getPositionUpdates().collect { position ->
+            locationRepository.getPositionUpdates().collect { position ->
                 _uiState.update { 
                     it.copy(
                         position = position,

@@ -2,10 +2,12 @@ package com.ibnips.kotlinapp.presentation.tag
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.ibnips.kotlinapp.domain.model.Fingerprint
 import com.ibnips.kotlinapp.domain.model.Room
 import com.ibnips.kotlinapp.domain.model.WifiNetwork
 import com.ibnips.kotlinapp.domain.repository.RoomRepository
 import com.ibnips.kotlinapp.domain.repository.SettingsRepository
+import com.ibnips.kotlinapp.storage.PreferenceManager
 import com.ibnips.kotlinapp.wifi.WifiScanner
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.delay
@@ -28,7 +30,8 @@ sealed interface TagUiEffect {
 class TagViewModel @Inject constructor(
     private val roomRepository: RoomRepository,
     private val settingsRepository: SettingsRepository,
-    private val wifiScanner: WifiScanner
+    private val wifiScanner: WifiScanner,
+    private val preferenceManager: PreferenceManager
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(TagUiState())
@@ -60,49 +63,35 @@ class TagViewModel @Inject constructor(
                     _uiState.update { it.copy(isScanning = true, errorMessage = null) }
                     
                     if (isMock) {
-                        delay(500) // Artificial delay for mock scanning feel
+                        delay(500)
                         val mockNetworks = listOf(
                             WifiNetwork("Campus_WiFi", "00:11:22:33:44:55", -45),
-                            WifiNetwork("ICPS_Node_A", "AA:BB:CC:DD:EE:FF", -52),
-                            WifiNetwork("eduroam", "11:22:33:44:55:66", -68)
+                            WifiNetwork("ICPS_Node_A", "AA:BB:CC:DD:EE:FF", -52)
                         )
                         _uiState.update { it.copy(visibleNetworks = mockNetworks, isScanning = false) }
                     } else {
                         val outcome = wifiScanner.scanNearbyNetworks(forceRefresh = true)
                         when (outcome) {
                             is WifiScanner.WifiScanOutcome.Success -> {
+                                val now = System.currentTimeMillis()
                                 val networks = outcome.results.map {
-                                    WifiNetwork(
-                                        ssid = it.ssid,
-                                        bssid = it.bssid,
-                                        rssi = it.rssi,
-                                        timestamp = it.timestamp
-                                    )
+                                    WifiNetwork(it.ssid, it.bssid, it.rssi, it.timestamp)
                                 }
+                                
+                                // Anti-Ghosting: Only allow tagging if data is very recent (< 6s)
+                                val scanAge = if (outcome.results.isNotEmpty()) now - outcome.results.first().timestamp else 99999
+                                val isFresh = scanAge < 6000
+
                                 _uiState.update { 
                                     it.copy(
                                         visibleNetworks = networks, 
                                         isScanning = false,
-                                        errorMessage = if (networks.isEmpty()) "No Wi-Fi networks found nearby." else null
+                                        errorMessage = if (!isFresh) "Waiting for hardware signal update..." else null
                                     ) 
                                 }
                             }
                             is WifiScanner.WifiScanOutcome.Failure -> {
-                                val networks = outcome.cachedResults.map {
-                                    WifiNetwork(
-                                        ssid = it.ssid,
-                                        bssid = it.bssid,
-                                        rssi = it.rssi,
-                                        timestamp = it.timestamp
-                                    )
-                                }
-                                _uiState.update { 
-                                    it.copy(
-                                        visibleNetworks = networks,
-                                        isScanning = false,
-                                        errorMessage = if (networks.isEmpty()) outcome.message else "Live scan failed: ${outcome.reason}. Showing cached data."
-                                    ) 
-                                }
+                                _uiState.update { it.copy(isScanning = false, errorMessage = "Scanning throttled by system.") }
                             }
                         }
                     }
@@ -125,12 +114,35 @@ class TagViewModel @Inject constructor(
     }
 
     private fun confirmTag() {
-        val selectedRoom = _uiState.value.selectedRoom ?: return
+        val state = _uiState.value
+        val selectedRoom = state.selectedRoom ?: return
+        
+        if (state.errorMessage != null || state.visibleNetworks.isEmpty()) {
+            viewModelScope.launch {
+                _uiEffect.emit(TagUiEffect.ShowToast("Cannot tag: Move your phone to trigger a fresh scan."))
+            }
+            return
+        }
+
         viewModelScope.launch {
             _uiState.update { it.copy(uploadState = UploadState.Loading) }
-            delay(2000) // Simulating upload
+            
+            // Only save the top 12 strongest signals to create a unique room signature
+            val signature = state.visibleNetworks.sortedByDescending { it.rssi }.take(12)
+
+            val fingerprint = Fingerprint(
+                roomId = selectedRoom.id,
+                roomName = selectedRoom.name,
+                floor = selectedRoom.floor,
+                x = selectedRoom.x,
+                y = selectedRoom.y,
+                wifiResults = signature
+            )
+            preferenceManager.saveFingerprint(fingerprint)
+            
+            delay(500)
             _uiState.update { it.copy(uploadState = UploadState.Success) }
-            _uiEffect.emit(TagUiEffect.ShowToast("Tagged as ${selectedRoom.name}"))
+            _uiEffect.emit(TagUiEffect.ShowToast("Location Verified and Saved!"))
             _uiEffect.emit(TagUiEffect.NavigateBack)
         }
     }

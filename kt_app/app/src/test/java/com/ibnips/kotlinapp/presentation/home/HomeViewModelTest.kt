@@ -3,11 +3,14 @@ package com.ibnips.kotlinapp.presentation.home
 import app.cash.turbine.test
 import com.ibnips.kotlinapp.domain.model.Position
 import com.ibnips.kotlinapp.domain.repository.LocationRepository
+import com.ibnips.kotlinapp.domain.repository.RoomRepository
 import com.ibnips.kotlinapp.domain.repository.SettingsRepository
+import com.ibnips.kotlinapp.storage.PreferenceManager
 import com.ibnips.kotlinapp.util.MainDispatcherRule
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Before
@@ -25,7 +28,9 @@ class HomeViewModelTest {
 
     private lateinit var viewModel: HomeViewModel
     private val locationRepository = mockk<LocationRepository>(relaxed = true)
+    private val roomRepository = mockk<RoomRepository>(relaxed = true)
     private val settingsRepository = mockk<SettingsRepository>(relaxed = true)
+    private val preferenceManager = mockk<PreferenceManager>(relaxed = true)
 
     private val positionFlow = MutableStateFlow(Position(1, 0.5f, 0.5f, 100, "Test Room"))
     private val mockModeFlow = MutableStateFlow(false)
@@ -34,8 +39,14 @@ class HomeViewModelTest {
     fun setup() {
         every { locationRepository.getPositionUpdates() } returns positionFlow
         every { settingsRepository.mockModeEnabled } returns mockModeFlow
+        every { roomRepository.getRooms() } returns flowOf(emptyList())
         
-        viewModel = HomeViewModel(locationRepository, settingsRepository)
+        viewModel = HomeViewModel(
+            locationRepository = locationRepository,
+            roomRepository = roomRepository,
+            settingsRepository = settingsRepository,
+            preferenceManager = preferenceManager
+        )
     }
 
     /**

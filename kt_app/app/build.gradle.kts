@@ -10,7 +10,6 @@ android {
     namespace = "com.ibnips.kotlinapp"
     compileSdk = 35
 
-    // Redirect build directory to avoid file locking issues on Windows (OneDrive, Sync, etc.)
     val tempBuildDir = System.getProperty("user.home") + "/.gradle-local-build/ibnIPS/${project.name}"
     layout.buildDirectory.set(file(tempBuildDir))
 
@@ -75,6 +74,7 @@ dependencies {
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.androidx.compose.material.icons.extended)
 
     implementation(libs.retrofit)
     implementation(libs.retrofit.gson)
@@ -117,22 +117,55 @@ kapt {
     correctErrorTypes = true
 }
 
-// Radical fix for the "Files\JetBrains\IntelliJ" error on Windows.
+tasks.register("debugTestEnv") {
+    doLast {
+        val testTask = tasks.getByName<Test>("testDebugUnitTest")
+        val out = StringBuilder()
+        out.append("\n--- TEST TASK DEBUG ---\n")
+        out.append("Executable: ${testTask.executable}\n")
+        out.append("All JVM Args:\n")
+        testTask.allJvmArgs.forEach { out.append("  $it\n") }
+        out.append("Environment Variables (Safe list):\n")
+        testTask.environment.forEach { (k, v) ->
+            if (k.uppercase() in listOf("JAVA_HOME", "PATH", "JAVA_TOOL_OPTIONS", "_JAVA_OPTIONS", "JDK_JAVA_OPTIONS", "CLASSPATH")) {
+                out.append("  $k: $v\n")
+            }
+        }
+        throw GradleException(out.toString())
+    }
+}
+
 tasks.withType<Test> {
-    // 1. Clear problematic environment variables for the forked JVM process.
-    // These are often the cause of "Could not find or load main class Files\JetBrains\IntelliJ"
-    environment("JAVA_TOOL_OPTIONS", "")
-    environment("_JAVA_OPTIONS", "")
-    environment("JDK_JAVA_OPTIONS", "")
+    // Radical fix for Windows environment issues causing forked JVMs to fail.
     
-    // 2. Ensure we use a clean path for the executable if JAVA_HOME is available
-    val javaHome = System.getenv("JAVA_HOME")
-    if (!javaHome.isNullOrBlank()) {
-        val javaExe = if (System.getProperty("os.name").contains("Windows")) "java.exe" else "java"
-        executable = file("$javaHome/bin/$javaExe").absolutePath
+    // 1. Sanitize JAVA_HOME
+    val jh = System.getenv("JAVA_HOME")?.trim()?.removeSurrounding("\"")?.removeSuffix("\\")
+    if (jh != null) {
+        executable = "$jh\\bin\\java.exe"
     }
 
-    maxHeapSize = "1024m"
-    systemProperty("java.awt.headless", "true")
-    systemProperty("file.encoding", "UTF-8")
+    // 2. Completely override the environment to prevent leaking unquoted machine-level variables
+    val cleanEnv = mutableMapOf<String, Any>()
+    
+    // Essential system variables
+    listOf("SystemRoot", "SystemDrive", "TEMP", "TMP", "USERNAME", "USERPROFILE", "ComSpec").forEach { key ->
+        System.getenv(key)?.let { cleanEnv[key] = it }
+    }
+    
+    if (jh != null) cleanEnv["JAVA_HOME"] = jh
+    
+    // Minimal and clean PATH
+    val system32 = "${System.getenv("SystemRoot") ?: "C:\\Windows"}\\System32"
+    val cleanPath = listOfNotNull(jh?.let { "$it\\bin" }, system32).joinToString(";")
+    cleanEnv["PATH"] = cleanPath
+    
+    // Force set toxic variables to empty to block inheritance from the machine
+    listOf("JAVA_TOOL_OPTIONS", "_JAVA_OPTIONS", "JDK_JAVA_OPTIONS", "CLASSPATH", "GRADLE_OPTS").forEach { 
+        cleanEnv[it] = "" 
+    }
+    
+    environment = cleanEnv
+
+    // 3. Clear and set JVM arguments explicitly
+    setJvmArgs(listOf("-Djava.awt.headless=true", "-Xmx1024m", "-ea", "-Dfile.encoding=UTF-8"))
 }

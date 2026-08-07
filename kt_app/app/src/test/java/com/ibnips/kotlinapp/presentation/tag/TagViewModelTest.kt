@@ -3,7 +3,10 @@ package com.ibnips.kotlinapp.presentation.tag
 import app.cash.turbine.test
 import com.ibnips.kotlinapp.domain.model.Room
 import com.ibnips.kotlinapp.domain.repository.RoomRepository
+import com.ibnips.kotlinapp.domain.repository.SettingsRepository
+import com.ibnips.kotlinapp.storage.PreferenceManager
 import com.ibnips.kotlinapp.util.MainDispatcherRule
+import com.ibnips.kotlinapp.wifi.WifiScanner
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -24,15 +27,27 @@ class TagViewModelTest {
 
     private lateinit var viewModel: TagViewModel
     private val roomRepository = mockk<RoomRepository>()
+    private val settingsRepository = mockk<SettingsRepository>(relaxed = true)
+    private val wifiScanner = mockk<WifiScanner>(relaxed = true)
+    private val preferenceManager = mockk<PreferenceManager>(relaxed = true)
+
     private val mockRooms = listOf(
-        Room("1", "Lab 201", 2, "Test Description"),
-        Room("2", "Hall 1F", 1, "Test Description")
+        Room(id = "1", name = "Lab 201", floor = 2, description = "Test Description"),
+        Room(id = "2", name = "Hall 1F", floor = 1, description = "Test Description")
     )
 
     @Before
     fun setup() {
         every { roomRepository.getRooms() } returns flowOf(mockRooms)
-        viewModel = TagViewModel(roomRepository)
+        every { settingsRepository.mockModeEnabled } returns flowOf(true)
+        every { settingsRepository.positionUpdateFreq } returns flowOf(1000L)
+        
+        viewModel = TagViewModel(
+            roomRepository = roomRepository,
+            settingsRepository = settingsRepository,
+            wifiScanner = wifiScanner,
+            preferenceManager = preferenceManager
+        )
     }
 
     @Test
@@ -63,6 +78,9 @@ class TagViewModelTest {
         viewModel.onEvent(TagUiEvent.OnRoomSelected(selectedRoom))
         
         viewModel.uiEffect.test {
+            // Need to wait for initial wifi results because confirmTag checks visibleNetworks
+            advanceTimeBy(1001)
+            
             viewModel.onEvent(TagUiEvent.OnConfirmTag)
             
             // Initial state check for loading
@@ -75,7 +93,7 @@ class TagViewModelTest {
             
             val effect1 = awaitItem()
             assertTrue(effect1 is TagUiEffect.ShowToast)
-            assertEquals("Tagged as Lab 201", (effect1 as TagUiEffect.ShowToast).message)
+            assertEquals("Location Verified and Saved!", (effect1 as TagUiEffect.ShowToast).message)
             
             val effect2 = awaitItem()
             assertEquals(TagUiEffect.NavigateBack, effect2)
