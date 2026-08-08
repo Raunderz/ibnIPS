@@ -2,30 +2,47 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState, AppStateStatus } from 'react-native';
-import { Position, PositionStatus } from '../types';
-import { getNextPosition } from '../services/positionService';
+import { Position, PositionStatus, FloorNumber } from '../types';
+import { getNextPosition, getPositionFromScans } from '../services/positionService';
 import { POSITION_UPDATE_INTERVAL_MS } from '../utils/constants';
 
 interface UsePositionOptions {
   isMockMode: boolean;
   mockBasePosition?: Position;
+  realScans?: Array<{ rssi: number }>;
+  floor?: FloorNumber;
 }
 
-export function usePosition({ isMockMode, mockBasePosition }: UsePositionOptions) {
+export function usePosition({
+  isMockMode,
+  mockBasePosition,
+  realScans = [],
+  floor = 0,
+}: UsePositionOptions) {
   const [position, setPosition] = useState<Position | null>(null);
   const [status, setStatus] = useState<PositionStatus>('loading');
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchOnce = useCallback(async () => {
     try {
-      const next = await getNextPosition(isMockMode, mockBasePosition);
-      setPosition(next);
-      setStatus('active');
+      if (isMockMode) {
+        const next = await getNextPosition(isMockMode, mockBasePosition);
+        setPosition(next);
+        setStatus('active');
+      } else {
+        const next = getPositionFromScans(realScans, floor);
+        if (next) {
+          setPosition(next);
+          setStatus('active');
+        } else {
+          throw new Error('No Wi-Fi signals detected');
+        }
+      }
     } catch {
       // Keep last known position (grayed out in UI), just flag the error state
       setStatus('error');
     }
-  }, [isMockMode, mockBasePosition]);
+  }, [isMockMode, mockBasePosition, realScans, floor]);
 
   const startUpdates = useCallback(() => {
     if (intervalRef.current) return;
@@ -40,8 +57,25 @@ export function usePosition({ isMockMode, mockBasePosition }: UsePositionOptions
     }
   }, []);
 
-  // Pause when backgrounded, resume when foregrounded (spec 12.1)
+  // Real mode: recompute position whenever live Wi-Fi scans change.
   useEffect(() => {
+    if (isMockMode) {
+      return;
+    }
+    const next = getPositionFromScans(realScans, floor);
+    if (next) {
+      setPosition(next);
+      setStatus('active');
+    } else {
+      setStatus('error');
+    }
+  }, [isMockMode, realScans, floor]);
+
+  // Mock mode: poll on an interval and pause when backgrounded.
+  useEffect(() => {
+    if (!isMockMode) {
+      return;
+    }
     startUpdates();
 
     const handleAppStateChange = (nextState: AppStateStatus) => {
@@ -58,7 +92,7 @@ export function usePosition({ isMockMode, mockBasePosition }: UsePositionOptions
       stopUpdates();
       subscription.remove();
     };
-  }, [startUpdates, stopUpdates]);
+  }, [isMockMode, startUpdates, stopUpdates]);
 
   return { position, status, refresh: fetchOnce };
 }

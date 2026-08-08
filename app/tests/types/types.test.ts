@@ -140,9 +140,9 @@ describe('Types', () => {
   });
 
   describe('TagUploadStatus', () => {
-    it('should only allow idle, ready, loading, success, error', () => {
-      const statuses: TagUploadStatus[] = ['idle', 'ready', 'loading', 'success', 'error'];
-      expect(statuses).toHaveLength(5);
+    it('should only allow idle, loading, success, error', () => {
+      const statuses: TagUploadStatus[] = ['idle', 'loading', 'success', 'error'];
+      expect(statuses).toHaveLength(4);
     });
   });
 

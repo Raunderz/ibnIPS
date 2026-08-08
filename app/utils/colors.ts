@@ -1,5 +1,7 @@
 // ICPS/utils/colors.ts
 import { useColorScheme } from 'react-native';
+import { useSyncExternalStore } from 'react';
+import { getThemeAccent, setThemeAccent } from '../services/storageService';
 
 export const lightColors = {
   // Core Material 3 Roles
@@ -52,6 +54,12 @@ export const lightColors = {
   pink: '#984061',
   teal: '#006A6A',
   orange: '#8B5000',
+  blue: '#0061A4',
+  green: '#2E7D32',
+  cyan: '#00849E',
+  indigo: '#3949AB',
+  red: '#B3261E',
+  amber: '#B26A00',
 } as const;
 
 export const darkColors = {
@@ -105,6 +113,12 @@ export const darkColors = {
   pink: '#EFB8C8',
   teal: '#80E2E2',
   orange: '#FFB300',
+  blue: '#90CAF9',
+  green: '#A5D6A7',
+  cyan: '#80DEEA',
+  indigo: '#9FA8DA',
+  red: '#F2B8B5',
+  amber: '#FFD54F',
 } as const;
 
 // Default exported colors for static usage
@@ -114,15 +128,100 @@ export const colors = lightColors;
 export const floorColors: string[] = [colors.teal, colors.primary, colors.purple, colors.orange];
 export const darkFloorColors: string[] = [darkColors.teal, darkColors.primary, darkColors.purple, darkColors.orange];
 
-export function useThemeColors() {
+export type ThemeColors = { [K in keyof typeof lightColors]: string };
+export type ColorKey = keyof ThemeColors;
+
+// ---------------------------------------------------------------------------
+// Interactive theme accent — the selected accent color drives `primary` across
+// the app. Tapping a swatch on the Settings page changes the whole theme.
+// ---------------------------------------------------------------------------
+
+export const ACCENT_KEYS = [
+  'purple',
+  'pink',
+  'teal',
+  'orange',
+  'blue',
+  'green',
+  'cyan',
+  'indigo',
+  'red',
+  'amber',
+] as const;
+
+export type AccentKey = (typeof ACCENT_KEYS)[number];
+
+export function isAccentKey(value: string): value is AccentKey {
+  return (ACCENT_KEYS as readonly string[]).includes(value);
+}
+
+let accentKey: AccentKey = 'purple';
+const accentListeners = new Set<() => void>();
+
+function emitAccent() {
+  accentListeners.forEach((listener) => listener());
+}
+
+function subscribeAccent(listener: () => void): () => void {
+  accentListeners.add(listener);
+  return () => {
+    accentListeners.delete(listener);
+  };
+}
+
+function getAccentSnapshot(): AccentKey {
+  return accentKey;
+}
+
+export function getAccentKey(): AccentKey {
+  return accentKey;
+}
+
+export function useAccentKey(): AccentKey {
+  return useSyncExternalStore(subscribeAccent, getAccentSnapshot);
+}
+
+export function setAccentKey(key: AccentKey) {
+  if (accentKey === key) return;
+  accentKey = key;
+  emitAccent();
+  void setThemeAccent(key);
+}
+
+export async function loadAccentKey(): Promise<void> {
+  const stored = await getThemeAccent();
+  if (stored && isAccentKey(stored) && stored !== accentKey) {
+    accentKey = stored;
+    emitAccent();
+  }
+}
+
+function relativeLuminance(hex: string): number {
+  const h = hex.replace('#', '');
+  const [r, g, b] = [0, 2, 4].map((i) => {
+    const v = parseInt(h.substring(i, i + 2), 16) / 255;
+    return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+function contrastingOnColor(hex: string): string {
+  return relativeLuminance(hex) > 0.5 ? '#1D1B20' : '#FFFFFF';
+}
+
+export function useThemeColors(): ThemeColors {
   const scheme = useColorScheme();
-  return scheme === 'dark' ? darkColors : lightColors;
+  const accent = useAccentKey();
+  const base = scheme === 'dark' ? darkColors : lightColors;
+  const accentHex = scheme === 'dark' ? darkColors[accent] : lightColors[accent];
+  return {
+    ...base,
+    primary: accentHex,
+    onPrimary: contrastingOnColor(accentHex),
+  };
 }
 
 export function useFloorColors() {
   const scheme = useColorScheme();
   return scheme === 'dark' ? darkFloorColors : floorColors;
 }
-
-export type ThemeColors = { [K in keyof typeof lightColors]: string };
-export type ColorKey = keyof ThemeColors;

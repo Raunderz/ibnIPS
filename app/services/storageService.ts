@@ -1,7 +1,7 @@
 // ICPS/services/storageService.ts
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { HAS_SEEN_ONBOARDING_KEY } from '../utils/constants';
+import { HAS_SEEN_ONBOARDING_KEY, THEME_ACCENT_KEY } from '../utils/constants';
 
 export async function getHasSeenOnboarding(): Promise<boolean> {
   try {
@@ -49,6 +49,22 @@ export async function setUserPreferences(prefs: Partial<UserPreferences>): Promi
     await AsyncStorage.setItem(PREFS_KEY, JSON.stringify(updated));
   } catch {
     // Non-fatal
+  }
+}
+
+export async function getThemeAccent(): Promise<string | null> {
+  try {
+    return await AsyncStorage.getItem(THEME_ACCENT_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export async function setThemeAccent(key: string): Promise<void> {
+  try {
+    await AsyncStorage.setItem(THEME_ACCENT_KEY, key);
+  } catch {
+    // Non-fatal — theme resets to default next launch
   }
 }
 
