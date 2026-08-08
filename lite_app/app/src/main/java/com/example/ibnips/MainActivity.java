@@ -1,15 +1,13 @@
 package com.example.ibnips;
 
-import android.Manifest;
 import android.app.Activity;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
-import android.view.Gravity;
-import android.view.View;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
@@ -17,24 +15,23 @@ import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import org.json.JSONArray;
+
 import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Main (and only) activity.
- *
- * Layout: MapView fills the screen; a bottom overlay panel holds control buttons
- * and status text. All network calls run on a background thread; UI updates are
- * posted back to the main thread.
+ * Main activity for ibnIPS app.
  */
 public class MainActivity extends Activity {
 
-    private static final String TAG         = "ibnIPS";
-    private static final int    PERM_REQ    = 1001;
-    private static final int    SCAN_DELAY  = 2500; // ms before reading scan results
+    private static final String TAG           = "ibnIPS";
+    private static final int    PERM_REQ      = 1001;
+    private static final int    SCAN_DELAY    = 2500; // ms before reading scan results
+    private static final String PREF_TAGGED   = "tagged_locations_json";
 
     // ------------------------------------------------------------------
-    // Views (wired up in onCreate)
+    // Views
     // ------------------------------------------------------------------
     private MapView   mapView;
     private TextView  statusText;
@@ -43,12 +40,15 @@ public class MainActivity extends Activity {
     private Button    scanButton;
     private Button    pingButton;
     private Button    fetchMapButton;
+    private Button    locateMeButton;
 
     // ------------------------------------------------------------------
     // App state
     // ------------------------------------------------------------------
     private final HttpBackendClient backendClient = new HttpBackendClient();
     private List<WifiScanResult>    lastScanResults = new ArrayList<>();
+    private List<TaggedLocation>    localTaggedLocations = new ArrayList<>();
+    private MapResponse             cachedMapData   = null;
     private String                  authToken       = null;
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
@@ -70,6 +70,7 @@ public class MainActivity extends Activity {
         scanButton     = findViewById(R.id.btnScan);
         pingButton     = findViewById(R.id.btnPing);
         fetchMapButton = findViewById(R.id.btnFetchMap);
+        locateMeButton = findViewById(R.id.btnLocateMe);
 
         // Floor spinner: floors 1–5
         String[] floors = {"Floor 1", "Floor 2", "Floor 3", "Floor 4", "Floor 5"};
@@ -85,6 +86,10 @@ public class MainActivity extends Activity {
         scanButton.setOnClickListener(v -> onScanClicked());
         pingButton.setOnClickListener(v -> onPingClicked());
         fetchMapButton.setOnClickListener(v -> onFetchMapClicked());
+        locateMeButton.setOnClickListener(v -> onLocateMeClicked());
+
+        // Load persistent tagged locations
+        loadTaggedLocations();
 
         // Authenticate in background on startup
         setStatus("Authenticating…", false);
@@ -104,7 +109,6 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
-        // Refresh status label on resume
         if (authToken != null) {
             setStatus("Ready", false);
         }
@@ -115,20 +119,26 @@ public class MainActivity extends Activity {
     // ------------------------------------------------------------------
 
     private void onScanClicked() {
-        setStatus("Starting Wi-Fi scan…", false);
-        boolean started = WifiScanner.startScan(this);
-        if (!started) {
-            setStatus("Scan failed — check permissions / Wi-Fi enabled", true);
+        if (!WifiScanner.isLocationEnabled(this)) {
+            setStatus("Turn ON Location (GPS) in phone settings", true);
+            Toast.makeText(this, "Android requires Location (GPS) to be ON for Wi-Fi scanning", Toast.LENGTH_LONG).show();
             return;
         }
 
-        // Read results after OS scan completes (~2s)
+        setStatus("Scanning Wi-Fi…", false);
+        boolean started = WifiScanner.startScan(this);
+        Log.d(TAG, "startScan returned: " + started);
+
         mainHandler.postDelayed(() -> {
-            lastScanResults = WifiScanner.getLastScanResults(this);
+            lastScanResults = WifiScanner.getFreshScanResults(this, 12000);
             int count = lastScanResults.size();
-            setStatus("Scanned: " + count + " network" + (count == 1 ? "" : "s"), false);
-            Log.d(TAG, "Scan results: " + lastScanResults);
-        }, SCAN_DELAY);
+            if (count > 0) {
+                setStatus("Scanned: " + count + " network" + (count == 1 ? "" : "s"), false);
+            } else {
+                setStatus("0 networks found — check Wi-Fi & Location permissions", true);
+            }
+            Log.d(TAG, "Scan results count: " + count);
+        }, started ? SCAN_DELAY : 500);
     }
 
     private void onPingClicked() {
@@ -137,12 +147,25 @@ public class MainActivity extends Activity {
             setStatus("Enter a room name first", true);
             return;
         }
-        if (authToken == null) {
-            setStatus("Not authenticated — wait or restart", true);
+
+        // Get fresh scan results
+        lastScanResults = WifiScanner.getFreshScanResults(this, 15000);
+
+        if (lastScanResults.isEmpty()) {
+            setStatus("No Wi-Fi networks scanned! Click SCAN first.", true);
+            Toast.makeText(this, "Click SCAN first to record Wi-Fi fingerprints before tagging!", Toast.LENGTH_LONG).show();
             return;
         }
 
         int floor = floorSpinner.getSelectedItemPosition() + 1; // 1-indexed
+
+        // Store locally immediately so matching works 100%
+        saveTaggedLocation(roomName, floor, roomName.toLowerCase().replace(" ", "_"), lastScanResults);
+
+        if (authToken == null) {
+            setStatus("Tagged locally: " + roomName + " (Auth pending)", false);
+            return;
+        }
 
         setStatus("Pinging backend…", false);
         runInBackground(() -> {
@@ -157,9 +180,10 @@ public class MainActivity extends Activity {
             );
             mainHandler.post(() -> {
                 if (nodeId != null) {
-                    setStatus("Pinged: " + nodeId, false);
+                    setStatus("Pinged & Saved: " + roomName + " (" + lastScanResults.size() + " APs)", false);
+                    Toast.makeText(MainActivity.this, "Tagged location '" + roomName + "' with " + lastScanResults.size() + " Wi-Fi signals", Toast.LENGTH_SHORT).show();
                 } else {
-                    setStatus("Ping failed — see logcat", true);
+                    setStatus("Ping failed on server — saved locally (" + roomName + ")", true);
                 }
             });
         });
@@ -176,6 +200,7 @@ public class MainActivity extends Activity {
             MapResponse map = backendClient.getMap(authToken);
             mainHandler.post(() -> {
                 if (map != null) {
+                    cachedMapData = map;
                     mapView.setMapData(map);
                     int nodeCount = map.nodes != null ? map.nodes.size() : 0;
                     int edgeCount = map.edges != null ? map.edges.size() : 0;
@@ -185,6 +210,201 @@ public class MainActivity extends Activity {
                 }
             });
         });
+    }
+
+    /**
+     * "Locate Me" button click handler.
+     */
+    private void onLocateMeClicked() {
+        if (!WifiScanner.isLocationEnabled(this)) {
+            setStatus("Turn ON Location (GPS) in phone settings", true);
+            Toast.makeText(this, "Android requires Location (GPS) to be ON for Wi-Fi scanning", Toast.LENGTH_LONG).show();
+            return;
+        }
+
+        setStatus("Refreshing Wi-Fi scan for location…", false);
+        WifiScanner.startScan(this);
+
+        // Stage 1: Wait 2s for hardware scan to complete
+        mainHandler.postDelayed(() -> {
+            lastScanResults = WifiScanner.getFreshScanResults(this, 8000);
+
+            if (lastScanResults.isEmpty()) {
+                setStatus("Waiting for hardware scan sweep…", false);
+                mainHandler.postDelayed(() -> performLocationMatching(), 1500);
+            } else {
+                performLocationMatching();
+            }
+        }, 2000);
+    }
+
+    private void performLocationMatching() {
+        lastScanResults = WifiScanner.getLastScanResults(this);
+
+        if (lastScanResults.isEmpty()) {
+            setStatus("No Wi-Fi networks found to locate", true);
+            return;
+        }
+
+        setStatus("Matching Wi-Fi fingerprints… (" + lastScanResults.size() + " APs)", false);
+        runInBackground(() -> {
+            PositionResponse backendPos = null;
+
+            // 1. Attempt backend position lookup if authenticated
+            if (authToken != null) {
+                try {
+                    backendPos = backendClient.fetchPosition(authToken, lastScanResults);
+                } catch (Exception e) {
+                    Log.w(TAG, "Backend positioning failed, using local match", e);
+                }
+            }
+
+            // 2. Local fingerprint match with confidence evaluation
+            TaggedLocation.MatchResult localMatch = findBestLocalMatch(lastScanResults);
+
+            final PositionResponse finalBackendPos = backendPos;
+            mainHandler.post(() -> {
+                // Check backend or local result
+                if (finalBackendPos != null && !isEmptyStr(finalBackendPos.name)) {
+                    String locName = resolveLocationName(finalBackendPos);
+                    setStatus("Current location of you is: " + locName, false);
+                    Toast.makeText(MainActivity.this, "Current location of you is: " + locName, Toast.LENGTH_LONG).show();
+                    if (finalBackendPos.x >= 0 && finalBackendPos.y >= 0) {
+                        mapView.setUserPosition(finalBackendPos.x, finalBackendPos.y, finalBackendPos.floor);
+                    }
+                    return;
+                }
+
+                // If no backend result, evaluate local match confidence
+                if (localMatch == null || localMatch.confidencePct < 30) {
+                    setStatus("Location uncertain — weak Wi-Fi match. Try re-tagging with Ping.", true);
+                    Toast.makeText(MainActivity.this, "Location uncertain (weak Wi-Fi signal match). Re-tag this room with Ping.", Toast.LENGTH_LONG).show();
+                    return;
+                }
+
+                TaggedLocation loc = localMatch.location;
+                if (loc == null || isEmptyStr(loc.name)) {
+                    setStatus("Location uncertain — no matching tagged room.", true);
+                    return;
+                }
+
+                // Format honest confidence level for the user
+                String statusMsg;
+                if (localMatch.confidencePct >= 75) {
+                    statusMsg = "Current location of you is: " + loc.name + " (High confidence — " + localMatch.confidencePct + "%)";
+                } else if (localMatch.confidencePct >= 50) {
+                    statusMsg = "Likely location: " + loc.name + " (Medium confidence — " + localMatch.confidencePct + "%)";
+                } else {
+                    statusMsg = "Low confidence: Possibly near " + loc.name + " (" + localMatch.confidencePct + "% match)";
+                }
+
+                setStatus(statusMsg, localMatch.confidencePct < 50);
+                Toast.makeText(MainActivity.this, statusMsg, Toast.LENGTH_LONG).show();
+            });
+        });
+    }
+
+    // ------------------------------------------------------------------
+    // Local Fingerprint Matching & Storage
+    // ------------------------------------------------------------------
+
+    private TaggedLocation.MatchResult findBestLocalMatch(List<WifiScanResult> currentScans) {
+        if (localTaggedLocations.isEmpty() || currentScans == null || currentScans.isEmpty()) {
+            return null;
+        }
+
+        TaggedLocation.MatchResult bestMatch = null;
+
+        for (TaggedLocation tagged : localTaggedLocations) {
+            TaggedLocation.MatchResult result = tagged.computeMatchResult(currentScans);
+            Log.d(TAG, "Match result for '" + tagged.name + "': score=" + result.score + ", matchCount=" + result.matchCount + ", conf=" + result.confidencePct + "%");
+
+            if (bestMatch == null || result.score > bestMatch.score) {
+                bestMatch = result;
+            }
+        }
+
+        return bestMatch;
+    }
+
+    private void saveTaggedLocation(String name, int floor, String nodeId, List<WifiScanResult> scans) {
+        // Remove existing duplicate by name
+        for (int i = localTaggedLocations.size() - 1; i >= 0; i--) {
+            if (localTaggedLocations.get(i).name.equalsIgnoreCase(name)) {
+                localTaggedLocations.remove(i);
+            }
+        }
+
+        // Add new tagged location
+        TaggedLocation newTag = new TaggedLocation(name, floor, nodeId, new ArrayList<>(scans));
+        localTaggedLocations.add(newTag);
+
+        // Persist to SharedPreferences
+        try {
+            SharedPreferences prefs = getSharedPreferences("ibnIPS_prefs", MODE_PRIVATE);
+            JSONArray arr = new JSONArray();
+            for (TaggedLocation tag : localTaggedLocations) {
+                arr.put(tag.toJSON());
+            }
+            prefs.edit().putString(PREF_TAGGED, arr.toString()).apply();
+            Log.d(TAG, "Saved tagged location '" + name + "' to SharedPreferences (" + localTaggedLocations.size() + " total)");
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to save tagged locations to SharedPreferences", e);
+        }
+    }
+
+    private void loadTaggedLocations() {
+        localTaggedLocations.clear();
+        try {
+            SharedPreferences prefs = getSharedPreferences("ibnIPS_prefs", MODE_PRIVATE);
+            String jsonStr = prefs.getString(PREF_TAGGED, null);
+            if (jsonStr != null && !jsonStr.isEmpty()) {
+                JSONArray arr = new JSONArray(jsonStr);
+                for (int i = 0; i < arr.length(); i++) {
+                    localTaggedLocations.add(TaggedLocation.fromJSON(arr.getJSONObject(i)));
+                }
+                Log.d(TAG, "Loaded " + localTaggedLocations.size() + " tagged locations from SharedPreferences");
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to load tagged locations", e);
+        }
+    }
+
+    private String resolveLocationName(PositionResponse pos) {
+        if (!isEmptyStr(pos.name)) {
+            return pos.name;
+        }
+        if (!isEmptyStr(pos.nodeId)) {
+            if (cachedMapData != null && cachedMapData.nodes != null) {
+                for (MapNode node : cachedMapData.nodes) {
+                    if (node.nodeId != null && node.nodeId.equals(pos.nodeId)) {
+                        if (!isEmptyStr(node.name)) return node.name;
+                    }
+                }
+            }
+            return pos.nodeId;
+        }
+        if (pos.x >= 0 && pos.y >= 0 && cachedMapData != null && cachedMapData.nodes != null) {
+            MapNode closest = null;
+            long minDistanceSq = Long.MAX_VALUE;
+            for (MapNode node : cachedMapData.nodes) {
+                long dx = node.x - pos.x;
+                long dy = node.y - pos.y;
+                long distSq = dx * dx + dy * dy;
+                if (distSq < minDistanceSq) {
+                    minDistanceSq = distSq;
+                    closest = node;
+                }
+            }
+            if (closest != null) {
+                return !isEmptyStr(closest.name) ? closest.name : closest.nodeId;
+            }
+        }
+        return "Unknown";
+    }
+
+    private boolean isEmptyStr(String str) {
+        return str == null || str.trim().isEmpty();
     }
 
     // ------------------------------------------------------------------
@@ -217,7 +437,6 @@ public class MainActivity extends Activity {
     // Helpers
     // ------------------------------------------------------------------
 
-    /** Display a status message. If error=true, tint red and auto-clear after 3s. */
     private void setStatus(String msg, boolean error) {
         statusText.setText(msg);
         statusText.setTextColor(error
@@ -230,11 +449,10 @@ public class MainActivity extends Activity {
                 if (statusText.getCurrentTextColor() == Color.parseColor("#D32F2F")) {
                     statusText.setTextColor(Color.parseColor("#212121"));
                 }
-            }, 3000);
+            }, 4000);
         }
     }
 
-    /** Run a Runnable on a new daemon thread (fire-and-forget). */
     private void runInBackground(Runnable task) {
         Thread t = new Thread(task);
         t.setDaemon(true);

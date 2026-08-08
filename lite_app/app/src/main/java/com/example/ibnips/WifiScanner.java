@@ -3,37 +3,44 @@ package com.example.ibnips;
 import android.Manifest;
 import android.content.Context;
 import android.content.pm.PackageManager;
+import android.location.LocationManager;
 import android.net.wifi.ScanResult;
 import android.net.wifi.WifiManager;
+import android.os.Build;
+import android.os.SystemClock;
 import android.util.Log;
 
 import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Static helper that wraps WifiManager for scan initiation and result retrieval.
- *
- * Callers must have ACCESS_FINE_LOCATION and CHANGE_WIFI_STATE granted at
- * runtime (Android 6+) before calling any method.
+ * Static helper that wraps WifiManager for scan initiation, result retrieval,
+ * and freshness validation.
  */
 public class WifiScanner {
 
     private static final String TAG = "ibnIPS-Wifi";
 
-    // Private constructor — utility class, no instantiation
     private WifiScanner() {}
 
-    // ------------------------------------------------------------------
-    // startScan — kick off a new scan cycle
-    // ------------------------------------------------------------------
+    /**
+     * Checks whether Location Services (GPS / Network location) are enabled in System Settings.
+     */
+    public static boolean isLocationEnabled(Context context) {
+        try {
+            LocationManager lm = (LocationManager) context.getSystemService(Context.LOCATION_SERVICE);
+            if (lm == null) return false;
+            boolean gps = lm.isProviderEnabled(LocationManager.GPS_PROVIDER);
+            boolean network = lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER);
+            return gps || network;
+        } catch (Exception e) {
+            Log.e(TAG, "isLocationEnabled check failed", e);
+            return true;
+        }
+    }
 
     /**
-     * Initiates a Wi-Fi scan. Results are NOT immediately available; the OS
-     * delivers them asynchronously. Call getLastScanResults() after a short
-     * delay (typically 2–4 seconds).
-     *
-     * @param context application or activity context
-     * @return true if the scan was successfully requested
+     * Initiates a Wi-Fi hardware scan.
      */
     public static boolean startScan(Context context) {
         try {
@@ -44,7 +51,7 @@ public class WifiScanner {
                 return false;
             }
             if (!wifi.isWifiEnabled()) {
-                Log.w(TAG, "Wi-Fi is disabled");
+                Log.w(TAG, "Wi-Fi is disabled on device");
                 return false;
             }
             boolean started = wifi.startScan();
@@ -59,79 +66,96 @@ public class WifiScanner {
         }
     }
 
-    // ------------------------------------------------------------------
-    // getLastScanResults — return the most recent cached scan
-    // ------------------------------------------------------------------
+    /**
+     * Calculates the age of a ScanResult in milliseconds using boot-time nanos.
+     * Returns -1 if timestamp is invalid or unpopulated.
+     */
+    public static long getScanAgeMs(ScanResult sr) {
+        if (sr == null || sr.timestamp <= 0) return -1;
+        long nowMicros = SystemClock.elapsedRealtimeNanos() / 1000;
+        long diffMicros = nowMicros - sr.timestamp;
+        if (diffMicros < 0) return 0;
+        return diffMicros / 1000; // convert to ms
+    }
 
     /**
-     * Returns the most recently cached scan results from WifiManager.
-     * These are the results from the last completed scan (started by
-     * startScan() or the OS itself).
-     *
-     * @param context application or activity context
-     * @return list of scan results (may be empty, never null)
+     * Returns all available scan results from WifiManager.
      */
     public static List<WifiScanResult> getLastScanResults(Context context) {
+        return getFreshScanResults(context, -1);
+    }
+
+    /**
+     * Returns scan results, filtering out results older than maxAgeMs if maxAgeMs > 0.
+     *
+     * @param context   Context
+     * @param maxAgeMs  Maximum age in ms (e.g. 10000 for 10s). Pass <= 0 to ignore age filter.
+     */
+    public static List<WifiScanResult> getFreshScanResults(Context context, long maxAgeMs) {
         List<WifiScanResult> results = new ArrayList<>();
         try {
             WifiManager wifi = (WifiManager) context.getApplicationContext()
                     .getSystemService(Context.WIFI_SERVICE);
-            if (wifi == null) {
-                Log.w(TAG, "WifiManager not available");
-                return results;
-            }
+            if (wifi == null) return results;
 
             List<ScanResult> rawResults = wifi.getScanResults();
-            if (rawResults == null) {
-                Log.w(TAG, "getScanResults() returned null");
-                return results;
-            }
+            if (rawResults == null) return results;
+
+            long minFreshAge = Long.MAX_VALUE;
 
             for (ScanResult sr : rawResults) {
                 String bssid = sr.BSSID != null ? sr.BSSID : "";
                 String ssid  = sr.SSID  != null ? sr.SSID  : "";
-                int    rssi  = sr.level; // dBm
+                int    rssi  = sr.level;
 
-                WifiScanResult result = new WifiScanResult(bssid, ssid, rssi);
-                results.add(result);
-                Log.d(TAG, "AP: " + bssid + " (" + ssid + ") " + rssi + " dBm");
+                long ageMs = getScanAgeMs(sr);
+                if (ageMs >= 0 && ageMs < minFreshAge) {
+                    minFreshAge = ageMs;
+                }
+
+                // If maxAgeMs filter specified and result is older, skip it
+                if (maxAgeMs > 0 && ageMs > maxAgeMs) {
+                    Log.d(TAG, "Skipping stale AP: " + bssid + " (age: " + (ageMs / 1000) + "s)");
+                    continue;
+                }
+
+                results.add(new WifiScanResult(bssid, ssid, rssi));
             }
 
-            Log.d(TAG, "Total APs found: " + results.size());
+            if (minFreshAge != Long.MAX_VALUE) {
+                Log.d(TAG, "Scan results parsed: " + results.size() + " APs (newest scan age: " + (minFreshAge / 1000) + "s)");
+            } else {
+                Log.d(TAG, "Scan results parsed: " + results.size() + " APs");
+            }
         } catch (SecurityException e) {
-            Log.e(TAG, "getLastScanResults: missing permissions", e);
+            Log.e(TAG, "getFreshScanResults: missing permissions", e);
         } catch (Exception e) {
-            Log.e(TAG, "getLastScanResults: unexpected error", e);
+            Log.e(TAG, "getFreshScanResults: error", e);
         }
         return results;
     }
 
-    // ------------------------------------------------------------------
-    // requestLocationPermissions — call from an Activity
-    // ------------------------------------------------------------------
-
     /**
-     * Convenience wrapper — call this from MainActivity.onCreate() or
-     * before the first scan to request runtime permissions.
-     *
-     * The Activity should implement onRequestPermissionsResult() to handle
-     * the user's response.
-     *
-     * @param activity the calling Activity
-     * @param requestCode passed back in onRequestPermissionsResult()
+     * Request runtime permissions.
      */
-    public static void requestLocationPermissions(android.app.Activity activity,
-                                                  int requestCode) {
-        if (activity.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)
-                != PackageManager.PERMISSION_GRANTED) {
-            activity.requestPermissions(
-                    new String[]{
-                            Manifest.permission.ACCESS_FINE_LOCATION,
-                            Manifest.permission.ACCESS_COARSE_LOCATION,
-                            Manifest.permission.CHANGE_WIFI_STATE,
-                    },
-                    requestCode
-            );
+    public static void requestLocationPermissions(android.app.Activity activity, int requestCode) {
+        List<String> perms = new ArrayList<>();
+        if (activity.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            perms.add(Manifest.permission.ACCESS_FINE_LOCATION);
+        }
+        if (activity.checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            perms.add(Manifest.permission.ACCESS_COARSE_LOCATION);
+        }
+        if (activity.checkSelfPermission(Manifest.permission.CHANGE_WIFI_STATE) != PackageManager.PERMISSION_GRANTED) {
+            perms.add(Manifest.permission.CHANGE_WIFI_STATE);
+        }
+        if (Build.VERSION.SDK_INT >= 33) {
+            if (activity.checkSelfPermission("android.permission.NEARBY_WIFI_DEVICES") != PackageManager.PERMISSION_GRANTED) {
+                perms.add("android.permission.NEARBY_WIFI_DEVICES");
+            }
+        }
+        if (!perms.isEmpty()) {
+            activity.requestPermissions(perms.toArray(new String[0]), requestCode);
         }
     }
 }
