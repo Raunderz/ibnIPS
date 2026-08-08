@@ -335,3 +335,127 @@ body, html {
   font-weight: 700;
   color: var(--text-main);
 }
+
+/* Danger Button */
+.btn-danger {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: rgba(239, 68, 68, 0.4);
+  color: #fca5a5;
+}
+
+.btn-danger:hover {
+  background: rgba(239, 68, 68, 0.3);
+  border-color: rgba(239, 68, 68, 0.6);
+}
+
+/* Empty State Overlay */
+.empty-state {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 80;
+  background: radial-gradient(ellipse at center, rgba(59, 130, 246, 0.08), transparent 70%);
+}
+
+.empty-state-card {
+  max-width: 420px;
+  text-align: center;
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--bg-card-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-main);
+  padding: 40px 36px;
+}
+
+.empty-state-icon {
+  width: 64px;
+  height: 64px;
+  margin: 0 auto 20px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Outfit', sans-serif;
+  font-size: 28px;
+  font-weight: 700;
+  color: white;
+  box-shadow: 0 0 24px var(--accent-glow);
+}
+
+.empty-state-card h2 {
+  font-family: 'Outfit', sans-serif;
+  font-size: 22px;
+  margin-bottom: 10px;
+}
+
+.empty-state-card p {
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.6;
+  margin-bottom: 24px;
+}
+
+.empty-state-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: center;
+}
+
+.empty-state-actions .btn-primary {
+  width: 100%;
+  justify-content: center;
+}
+
+.empty-api {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+}
+
+.empty-api .form-input {
+  flex: 1;
+}
+
+/* Status Chip */
+.status-chip {
+  position: absolute;
+  bottom: 24px;
+  left: 24px;
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--bg-card-border);
+  border-radius: 30px;
+  padding: 8px 16px;
+  font-size: 12px;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  z-index: 85;
+  box-shadow: var(--shadow-main);
+}
+
+.status-sep {
+  opacity: 0.4;
+}
+
+/* Sidebar scroll padding */
+.sidebar-body::-webkit-scrollbar {
+  width: 6px;
+}
+
+.sidebar-body::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+}
+
+/* Navbar wrapping safety */
+.nav-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}

@@ -53,8 +53,8 @@ export class DbLoader {
             id: obj.node_id || obj.id || `node_${idx + 1}`,
             name: obj.name || obj.node_name || `Node ${idx + 1}`,
             floor: obj.floor !== undefined ? parseInt(obj.floor, 10) : 1,
-            x: obj.x !== undefined ? parseFloat(obj.x) : 100 + (idx % 6) * 120,
-            y: obj.y !== undefined ? parseFloat(obj.y) : 100 + Math.floor(idx / 6) * 120,
+            x: obj.x !== undefined ? parseFloat(obj.x) : 0,
+            y: obj.y !== undefined ? parseFloat(obj.y) : 0,
             type: obj.type || 'corridor',
             raw: obj
           };
@@ -86,8 +86,8 @@ export class DbLoader {
           return {
             from: obj.from_node || obj.from || obj.source,
             to: obj.to_node || obj.to || obj.target,
-            steps: obj.steps || 1,
-            direction: obj.direction || 'N'
+            steps: obj.steps != null ? obj.steps : 1,
+            direction: obj.direction != null ? obj.direction : 'N'
           };
         });
       }
