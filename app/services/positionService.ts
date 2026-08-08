@@ -1,12 +1,12 @@
-// ICPS/services/apiClient.ts
-// NOTE: Backend API internals are explicitly out of scope for the frontend team
-// (spec section 1). This is a placeholder interface so screens/services can be
-// wired against a stable contract, then swapped for the real implementation later.
+// ICPS/services/positionService.ts
+// Resolves the next user position. In mock mode it jitters around a base
+// position (spec 3.1); in real mode it derives position from live Wi-Fi scan
+// results (confidence comes from actual RSSI).
 
-import { NetworkReading, Position, Room } from '../types';
+import { Position, FloorNumber } from '../types';
 import { getRandomJitteredPosition } from './mockDataService';
-
-const BASE_URL = 'https://placeholder-api.icps.local'; // to be replaced by backend team
+import { fetchCurrentPosition } from './apiClient';
+import { getSignalQuality } from '../utils/wifi';
 
 export async function getNextPosition(isMockMode: boolean, mockBasePosition?: Position): Promise<Position> {
   if (isMockMode) {
@@ -19,20 +19,59 @@ export async function getNextPosition(isMockMode: boolean, mockBasePosition?: Po
   return fetchCurrentPosition();
 }
 
-export async function fetchCurrentPosition(): Promise<Position> {
-  throw new Error('apiClient.fetchCurrentPosition not implemented — use mock mode');
+// Builds a real Position from live Wi-Fi scan results. Confidence is derived
+// from the strongest detected AP's RSSI. Floor is taken from the floor the user
+// is viewing. x/y is an RSSI-weighted centroid over stable per-BSSID anchors:
+// each AP maps deterministically to a fixed point on the map, so the pin moves
+// smoothly as the set of visible APs and their strengths change while walking.
+const MAP_PADDING = 64; // keep anchors away from the 512x512 map edges
+const MAP_SPAN = 512 - MAP_PADDING * 2;
+
+function hashStringToUnit(input: string): number {
+  let hash = 2166136261;
+  for (let i = 0; i < input.length; i++) {
+    hash ^= input.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0) / 4294967296;
 }
 
-export async function fetchRoomList(): Promise<Room[]> {
-  throw new Error('apiClient.fetchRoomList not implemented — use mock mode');
+function rssiWeight(rssi: number): number {
+  // -50 dBm and better → 1.0; -100 dBm and worse → 0.0.
+  return Math.max(0, Math.min(1, (rssi + 100) / 50));
 }
 
-export async function fetchVisibleNetworks(): Promise<NetworkReading[]> {
-  throw new Error('apiClient.fetchVisibleNetworks not implemented — use mock mode');
+export function getPositionFromScans(
+  scans: Array<{ rssi: number; bssid?: string }>,
+  floor: FloorNumber
+): Position | null {
+  if (!scans || scans.length === 0) {
+    return null;
+  }
+  const strongest = scans.reduce((a, b) => (b.rssi > a.rssi ? b : a));
+  let totalWeight = 0;
+  let accX = 0;
+  let accY = 0;
+  for (let i = 0; i < scans.length; i++) {
+    const weight = rssiWeight(scans[i].rssi);
+    if (weight === 0) continue;
+    const seed =
+      scans[i].bssid && scans[i].bssid!.length > 0 ? scans[i].bssid! : `#ap-${i}`;
+    const h1 = hashStringToUnit(seed);
+    const h2 = hashStringToUnit(`${seed}:${seed.length}`);
+    accX += (MAP_PADDING + h1 * MAP_SPAN) * weight;
+    accY += (MAP_PADDING + h2 * MAP_SPAN) * weight;
+    totalWeight += weight;
+  }
+  const x = totalWeight === 0 ? 256 : Math.round(accX / totalWeight);
+  const y = totalWeight === 0 ? 256 : Math.round(accY / totalWeight);
+  return {
+    floor,
+    x,
+    y,
+    confidence: getSignalQuality(strongest.rssi),
+    timestamp: Date.now(),
+  };
 }
 
-export async function uploadLocationTag(roomId: string): Promise<{ success: boolean }> {
-  throw new Error('apiClient.uploadLocationTag not implemented — use mock mode');
-}
-
-export { BASE_URL };
+export { fetchCurrentPosition, fetchRoomList, fetchVisibleNetworks, uploadLocationTag, BASE_URL } from './apiClient';

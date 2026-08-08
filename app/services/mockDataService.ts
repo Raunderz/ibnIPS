@@ -69,10 +69,15 @@ export function getAllMockScenarios(): MockScenario[] {
 
 // Simulates a live position feed for testing the pin animation loop (spec 3.1)
 export function getRandomJitteredPosition(base: Position): Position {
+  // Jitter confidence by ±5% to simulate signal fluctuation
+  const confidenceJitter = Math.random() * 10 - 5;
+  const newConfidence = Math.max(10, Math.min(95, base.confidence + confidenceJitter));
+  
   return {
     ...base,
     x: base.x + (Math.random() * 10 - 5),
     y: base.y + (Math.random() * 10 - 5),
+    confidence: Math.round(newConfidence),
     timestamp: now(),
   };
 }

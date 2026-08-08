@@ -11,19 +11,26 @@ interface FloorSelectorProps {
   activeFloor: FloorNumber;
   onSelectFloor: (floor: FloorNumber) => void;
   useShortLabels?: boolean;
+  floors?: FloorNumber[];
+  getFloorLabel?: (floor: FloorNumber) => string;
+  getFloorShortLabel?: (floor: FloorNumber) => string;
 }
 
 export default function FloorSelector({
   activeFloor,
   onSelectFloor,
   useShortLabels = false,
+  floors,
+  getFloorLabel,
+  getFloorShortLabel,
 }: FloorSelectorProps) {
   const [buttonWidth, setButtonWidth] = useState(0);
   const themeColors = useThemeColors();
   const activeFloorColors = useFloorColors();
   const styles = getStyles(themeColors);
   const pillPosition = useRef(new Animated.Value(0)).current;
-  const activeIndex = FLOORS.indexOf(activeFloor);
+  const floorList = floors ?? FLOORS;
+  const activeIndex = floorList.indexOf(activeFloor);
   const activeColor = activeFloorColors[activeIndex] ?? themeColors.primary;
 
   useEffect(() => {
@@ -39,8 +46,13 @@ export default function FloorSelector({
 
   const handleLayout = (e: LayoutChangeEvent) => {
     const totalWidth = e.nativeEvent.layout.width;
-    setButtonWidth(totalWidth / FLOORS.length);
+    setButtonWidth(totalWidth / floorList.length);
   };
+
+  const labelFor = (floor: FloorNumber) =>
+    getFloorLabel?.(floor) ?? FLOOR_LABELS[floor] ?? `Floor ${floor}`;
+  const shortLabelFor = (floor: FloorNumber) =>
+    getFloorShortLabel?.(floor) ?? FLOOR_SHORT_LABELS[floor] ?? String(floor);
 
   return (
     <View style={styles.row} onLayout={handleLayout}>
@@ -57,25 +69,25 @@ export default function FloorSelector({
           ]}
         />
       )}
-      {FLOORS.map((floor, i) => {
+      {floorList.map((floor, i) => {
         const isActive = floor === activeFloor;
         return (
           <Pressable
             key={floor}
             onPress={() => onSelectFloor(floor)}
             accessibilityRole="button"
-            accessibilityLabel={FLOOR_LABELS[floor]}
+            accessibilityLabel={labelFor(floor)}
             accessibilityState={{ selected: isActive }}
             style={styles.button}
           >
             <View
               style={[
                 styles.dot,
-                { backgroundColor: isActive ? '#FFFFFF' : activeFloorColors[i] },
+                { backgroundColor: isActive ? '#FFFFFF' : activeFloorColors[i] ?? themeColors.primary },
               ]}
             />
             <Text style={[styles.text, isActive && styles.textActive]}>
-              {useShortLabels ? FLOOR_SHORT_LABELS[floor] : FLOOR_LABELS[floor]}
+              {useShortLabels ? shortLabelFor(floor) : labelFor(floor)}
             </Text>
           </Pressable>
         );
