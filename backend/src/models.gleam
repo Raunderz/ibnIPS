@@ -122,13 +122,9 @@ fn decode_fingerprint() -> decode.Decoder(Fingerprint) {
   }
 }
 
-pub fn decode_auth_request(
-  json: dynamic.Dynamic,
-) -> Result(AuthRequest, List(decode.DecodeError)) {
-  decode.run(json, {
-    use email <- decode.field("email", decode.string)
-    decode.success(AuthRequest(email))
-  })
+pub fn decode_auth_request() -> decode.Decoder(AuthRequest) {
+  use email <- decode.field("email", decode.string)
+  decode.success(AuthRequest(email))
 }
 
 // --- JSON Encoders ---
