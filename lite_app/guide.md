@@ -144,15 +144,33 @@ Methods:
    - Bearer token in Authorization header
    - Returns: MapResponse object
 
-4. fetchPosition(token, wifiScans) → PositionResponse (optional for later)
-   - POST to backend (you'll add this later if needed)
+4. fetchPosition(token, wifiScans) → PositionResponse
+   - POST to http://localhost:3000/api/position
+   - Bearer token in Authorization header
+   - Body: {"fingerprints": [{"bssid":"...", "ssid":"...", "rssi":-65}]}
+   - Returns: PositionResponse (x, y, floor, node_id, name)
 
 Use only HttpURLConnection, org.json.
 Handle errors: log exception, return null or throw.
-No timeout handling needed yet (can add later).
 ```
 
-**What you get back:** `HttpBackendClient.java` (~120 lines)
+**What you get back:** `HttpBackendClient.java` (~130 lines)
+
+---
+
+### Task 3.2 — Locate Me & Positioning
+
+**Input to Claude:**
+```
+Implement "Locate Me" functionality:
+1. PositionResponse model with fields: x, y, floor, nodeId, name.
+2. "Locate Me" button in main.xml overlay.
+3. onLocateMeClicked() in MainActivity:
+   - Scans Wi-Fi networks.
+   - Calls backend POST /api/position with current fingerprints.
+   - Updates MapView user dot (x, y, floor).
+   - Displays "Current location: <Location Name>" in UI status label.
+```
 
 ---
 
@@ -335,29 +353,35 @@ adb logcat | grep ibnIPS
 ### Task 6.2 — Manual testing checklist
 
 1. **Permissions:**
-   - [ ] App requests location + Wi-Fi permissions on first run
-   - [ ] Permissions are granted (Settings > Apps > ibnIPS)
+   - [x] App requests location + Wi-Fi permissions on first run
+   - [x] Permissions are granted (Settings > Apps > ibnIPS)
 
 2. **Wi-Fi Scan:**
-   - [ ] Click "Scan" button
-   - [ ] Status shows "Scanned: X networks"
-   - [ ] Check logcat: `adb logcat | grep WifiScanner` shows BSSID + RSSI
+   - [x] Click "Scan" button
+   - [x] Status shows "Scanned: X networks"
+   - [x] Check logcat: `adb logcat | grep WifiScanner` shows BSSID + RSSI
 
 3. **Backend ping:**
-   - [ ] Backend running on localhost:3000
-   - [ ] Type room name (e.g., "Lab 201"), select floor 2
-   - [ ] Click "Ping"
-   - [ ] Status shows "Pinged: lab_201_f2"
-   - [ ] Check backend DB: node created with Wi-Fi fingerprints
+   - [x] Backend running on live server (https://ibnips.onrender.com)
+   - [x] Type room name (e.g., "Lab 201"), select floor 2
+   - [x] Click "Ping"
+   - [x] Status shows "Pinged: lab_201_f2"
+   - [x] Check backend DB / local storage: node created with Wi-Fi fingerprints
 
 4. **Fetch map:**
-   - [ ] Click "Fetch Map"
-   - [ ] Map renders (nodes as blue circles, edges as black lines)
-   - [ ] Status shows "Map loaded: X nodes, Y edges"
+   - [x] Click "Fetch Map"
+   - [x] Map renders (nodes as blue circles, edges as black lines)
+   - [x] Status shows "Map loaded: X nodes, Y edges"
 
-5. **APK size:**
-   - [ ] `adb shell pm dump com.example.ibnips | grep size`
-   - [ ] Expect 400KB–700KB
+5. **Locate Me:**
+   - [x] Click "Locate Me" button
+   - [x] Scans Wi-Fi networks and matches signals via server / local similarity
+   - [x] Status displays "Current location of you is: <Location Name>"
+   - [x] User position dot updates on Canvas map
+
+6. **APK size:**
+   - [x] `adb shell pm dump com.example.ibnips | grep size`
+   - [x] Target < 700KB (Actual: ~44KB)
 
 ---
 
@@ -512,8 +536,14 @@ adb uninstall com.example.ibnips
 ibnips-android/
 ├── settings.gradle
 ├── build.gradle (root)
+├── build.sh                             ← One-click build script
+├── local.properties                     ← SDK path
+├── gradle/wrapper/
+│   ├── gradle-wrapper.jar
+│   └── gradle-wrapper.properties
 ├── app/
 │   ├── build.gradle
+│   ├── proguard-rules.pro
 │   ├── src/main/
 │   │   ├── AndroidManifest.xml
 │   │   ├── java/com/example/ibnips/
@@ -522,15 +552,19 @@ ibnips-android/
 │   │   │   ├── HttpBackendClient.java
 │   │   │   ├── WifiScanner.java
 │   │   │   ├── WifiScanResult.java
+│   │   │   ├── TaggedLocation.java      ← Local fingerprint matching model
 │   │   │   ├── MapResponse.java
 │   │   │   ├── MapNode.java
 │   │   │   ├── MapEdge.java
 │   │   │   └── PositionResponse.java
 │   │   └── res/
-│   │       └── layout/
-│   │           └── main.xml
-│   └── build/outputs/apk/release/
-│       └── app-release.apk ← Your deliverable
+│   │       ├── layout/main.xml
+│   │       ├── values/strings.xml
+│   │       ├── values/colors.xml
+│   │       ├── drawable/ic_launcher_fg.xml
+│   │       └── mipmap-anydpi-v26/ic_launcher.xml
+│   └── build/outputs/apk/debug/
+│       └── app-debug.apk                ← Deliverable (~44KB)
 ```
 
 ---
@@ -547,11 +581,13 @@ ibnips-android/
 
 ## Success Criteria
 
-✅ APK builds to <1MB
-✅ App scans Wi-Fi networks and logs BSSIDs
-✅ App POSTs to backend and gets nodeId back
-✅ App fetches map and renders nodes + edges on Canvas
-✅ App runs on Android 8.0+ without crashes
-✅ All code is Java (no Kotlin, no AndroidX)
+✅ **APK builds to <1MB** (Actual: 44KB)
+✅ **App scans Wi-Fi networks and logs BSSIDs**
+✅ **App POSTs to backend and gets nodeId back**
+✅ **App fetches map and renders nodes + edges on Canvas**
+✅ **Locate Me matches Wi-Fi fingerprints and displays location name**
+✅ **Scan freshness filter prevents stale OS Wi-Fi scan cache issues**
+✅ **App runs on Android 8.0+ without crashes**
+✅ **All code is Java (no Kotlin, no AndroidX)**
 
 Once these are met, you're done with Phase 1. Next: offline positioning, compass integration, step counter but don't do anything not mentioned in this file.

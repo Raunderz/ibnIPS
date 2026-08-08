@@ -18,7 +18,7 @@
     <LinearLayout
         android:id="@+id/controlOverlay"
         android:layout_width="match_parent"
-        android:layout_height="160dp"
+        android:layout_height="180dp"
         android:layout_gravity="bottom"
         android:background="#FFFFFFFF"
         android:elevation="4dp"
@@ -36,33 +36,44 @@
             <Button
                 android:id="@+id/btnScan"
                 android:layout_width="match_parent"
-                android:layout_height="44dp"
-                android:layout_marginBottom="4dp"
+                android:layout_height="38dp"
+                android:layout_marginBottom="3dp"
                 android:background="#1565C0"
                 android:text="Scan"
                 android:textColor="#FFFFFF"
-                android:textSize="13sp"
+                android:textSize="12sp"
                 android:textAllCaps="false" />
 
             <Button
                 android:id="@+id/btnPing"
                 android:layout_width="match_parent"
-                android:layout_height="44dp"
-                android:layout_marginBottom="4dp"
+                android:layout_height="38dp"
+                android:layout_marginBottom="3dp"
                 android:background="#2E7D32"
                 android:text="Ping"
                 android:textColor="#FFFFFF"
-                android:textSize="13sp"
+                android:textSize="12sp"
                 android:textAllCaps="false" />
 
             <Button
                 android:id="@+id/btnFetchMap"
                 android:layout_width="match_parent"
-                android:layout_height="44dp"
+                android:layout_height="38dp"
+                android:layout_marginBottom="3dp"
                 android:background="#E65100"
                 android:text="Fetch Map"
                 android:textColor="#FFFFFF"
-                android:textSize="13sp"
+                android:textSize="12sp"
+                android:textAllCaps="false" />
+
+            <Button
+                android:id="@+id/btnLocateMe"
+                android:layout_width="match_parent"
+                android:layout_height="38dp"
+                android:background="#7B1FA2"
+                android:text="Locate Me"
+                android:textColor="#FFFFFF"
+                android:textSize="12sp"
                 android:textAllCaps="false" />
 
         </LinearLayout>
@@ -88,17 +99,17 @@
                 android:text="Status: —"
                 android:textColor="#212121"
                 android:textSize="12sp"
-                android:maxLines="2"
+                android:maxLines="3"
                 android:ellipsize="end" />
 
             <EditText
                 android:id="@+id/roomNameInput"
                 android:layout_width="match_parent"
-                android:layout_height="44dp"
+                android:layout_height="38dp"
                 android:layout_marginBottom="4dp"
                 android:background="@android:drawable/edit_text"
                 android:hint="Room name"
-                android:textSize="13sp"
+                android:textSize="12sp"
                 android:inputType="text"
                 android:singleLine="true"
                 android:imeOptions="actionDone"
@@ -107,9 +118,9 @@
             <Spinner
                 android:id="@+id/floorSpinner"
                 android:layout_width="match_parent"
-                android:layout_height="44dp"
+                android:layout_height="38dp"
                 android:background="@android:drawable/btn_default"
-                android:textSize="13sp" />
+                android:textSize="12sp" />
 
         </LinearLayout>
 
