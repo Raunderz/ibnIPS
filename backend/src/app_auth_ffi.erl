@@ -1,12 +1,16 @@
 -module(app_auth_ffi).
--export([put_token/2, get_token/1]).
+-export([put_token/2, get_token/1, init_table/0]).
+
+init_table() ->
+    ets:new(auth_tokens, [named_table, public, set]),
+    nil.
 
 put_token(Token, Email) ->
-    erlang:put({auth_token, Token}, Email),
+    ets:insert(auth_tokens, {Token, Email}),
     nil.
 
 get_token(Token) ->
-    case erlang:get({auth_token, Token}) of
-        undefined -> {error, nil};
-        Email -> {ok, Email}
+    case ets:lookup(auth_tokens, Token) of
+        [{_, Email}] -> {ok, Email};
+        [] -> {error, nil}
     end.

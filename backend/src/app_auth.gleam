@@ -8,6 +8,9 @@ import gleam/string
 import models.{type AuthRequest, AuthResponse, ErrorResponse}
 import wisp
 
+@external(erlang, "app_auth_ffi", "init_table")
+pub fn init_table() -> Nil
+
 @external(erlang, "app_auth_ffi", "put_token")
 fn put_token(token: String, email: String) -> Nil
 

@@ -60,9 +60,10 @@ edge_id INTEGER PRIMARY KEY AUTOINCREMENT,
 from_node TEXT NOT NULL,
 to_node TEXT NOT NULL,
 steps INTEGER NOT NULL,
+direction TEXT NOT NULL DEFAULT '',
 created_at INTEGER DEFAULT (unixepoch()),
 FOREIGN KEY(from_node) REFERENCES nodes(node_id),
-FOREIGN KEY(from_node) REFERENCES nodes(node_id),
+FOREIGN KEY(to_node) REFERENCES nodes(node_id),
 UNIQUE(from_node,to_node)
 );
 "
