@@ -14,6 +14,7 @@ export interface Network {
   ssid: string | null;
   rssi: number;
   frequency: number;
+  timestamp?: number;
 }
 
 interface NativeWifiScanner {
@@ -79,7 +80,12 @@ class WifiService {
       }
     );
 
-    WifiScanner.startScanning();
+    try {
+      WifiScanner.startScanning();
+      console.warn('[wifi] native startScanning invoked');
+    } catch (err) {
+      console.warn('[wifi] native startScanning threw', err);
+    }
   }
 
   /**

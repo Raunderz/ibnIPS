@@ -9,6 +9,9 @@ import android.content.pm.PackageManager;
 import android.net.wifi.ScanResult;
 import android.net.wifi.WifiManager;
 import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
+import android.util.Log;
 
 import com.facebook.react.bridge.Arguments;
 import com.facebook.react.bridge.ReactApplicationContext;
@@ -42,6 +45,10 @@ public class WifiScannerModule extends ReactContextBaseJavaModule {
   private final ReactApplicationContext reactContext;
   private WifiManager wifiManager;
   private BroadcastReceiver scanReceiver;
+  private Handler handler;
+  private Runnable scanRunnable;
+
+  private static final long SCAN_PERIOD_MS = 5000L;
 
   public WifiScannerModule(ReactApplicationContext reactContext) {
     super(reactContext);
@@ -74,11 +81,33 @@ public class WifiScannerModule extends ReactContextBaseJavaModule {
     IntentFilter filter = new IntentFilter(ACTION_SCAN_RESULTS);
     reactContext.registerReceiver(scanReceiver, filter);
 
-    // Kick off a single initial scan. The system throttles repeated calls, so
-    // all subsequent updates come from the broadcast listener.
+    handler = new Handler(Looper.getMainLooper());
+    scanRunnable =
+        new Runnable() {
+          @Override
+          public void run() {
+            // Re-read latest cached results and push them to JS. Re-requesting
+            // a scan here is harmless if the OS throttles it — the results we
+            // emit are whatever the radio currently knows about.
+            sendScanResults();
+            try {
+              if (hasScanPermission() && wifiManager != null && wifiManager.isWifiEnabled()) {
+                wifiManager.startScan();
+              }
+            } catch (Throwable ignored) {
+              // Throttling / race conditions can throw; ignore and retry later.
+            }
+            if (handler != null && scanRunnable != null) {
+              handler.postDelayed(this, SCAN_PERIOD_MS);
+            }
+          }
+        };
+    // Emit whatever is already cached immediately, then start the refresh loop.
+    sendScanResults();
     if (hasScanPermission() && wifiManager != null && wifiManager.isWifiEnabled()) {
       wifiManager.startScan();
     }
+    handler.postDelayed(scanRunnable, SCAN_PERIOD_MS);
   }
 
   @ReactMethod
@@ -91,6 +120,11 @@ public class WifiScannerModule extends ReactContextBaseJavaModule {
       }
       scanReceiver = null;
     }
+    if (handler != null && scanRunnable != null) {
+      handler.removeCallbacks(scanRunnable);
+    }
+    handler = null;
+    scanRunnable = null;
   }
 
   @ReactMethod
@@ -121,10 +155,12 @@ public class WifiScannerModule extends ReactContextBaseJavaModule {
 
   private void sendScanResults() {
     if (!hasScanPermission() || wifiManager == null) {
+      Log.d("WifiScanner", "skip sendScanResults (no permission / no wifi manager)");
       return;
     }
 
     List<ScanResult> results = wifiManager.getScanResults();
+    Log.d("WifiScanner", "scan results available: " + results.size());
 
     // Deduplicate by BSSID, keeping the strongest reading per network.
     Map<String, WritableMap> byBssid = new HashMap<>();
