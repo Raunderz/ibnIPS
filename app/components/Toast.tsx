@@ -11,6 +11,7 @@ interface ToastProps {
 }
 
 const variantIcons = {
+  info: 'ℹ',
   success: '✓',
   warning: '⚠',
   error: '✕',
@@ -22,6 +23,7 @@ export default function Toast({ toast }: ToastProps) {
   const styles = getStyles(themeColors);
 
   const variantColors = {
+    info: themeColors.primary,
     success: themeColors.primary === '#D0BCFF' ? '#388E3C' : '#2E7D32',
     warning: themeColors.warning,
     error: themeColors.error,

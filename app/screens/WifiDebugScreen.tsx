@@ -235,6 +235,3 @@ const getStyles = (colors: ThemeColors) =>
       color: colors.onPrimaryContainer,
     },
   });
-
-// Named export kept for the (currently unused) RootNavigator module.
-export { WifiDebugScreen };
