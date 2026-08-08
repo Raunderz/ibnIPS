@@ -3,8 +3,10 @@
 
 import app_auth
 import db
+import env
 import gleam/erlang/process
 import gleam/http
+import gleam/int
 import gleam/io
 import map
 import mist
@@ -30,11 +32,11 @@ pub fn main() -> Nil {
   let assert Ok(_) =
     wisp_mist.handler(handler, secret_key_base)
     |> mist.new
-    |> mist.port(3000)
+    |> mist.port(env.port(3000))
     |> mist.bind("0.0.0.0")
     |> mist.start
 
-  io.println("Server started on http://localhost:3000")
+  io.println("Server started on port " <> env.port(3000) |> int.to_string)
 
   process.sleep_forever()
 }

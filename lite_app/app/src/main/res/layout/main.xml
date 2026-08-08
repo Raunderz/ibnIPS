@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Root: FrameLayout so the overlay panel sits on top of the full-screen MapView.
+  The MapView fills the entire screen; the overlay panel is anchored to the bottom.
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#FAFAFA">
+
+    <!-- Full-screen map canvas -->
+    <com.example.ibnips.MapView
+        android:id="@+id/mapView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <!-- Bottom control overlay -->
+    <LinearLayout
+        android:id="@+id/controlOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="160dp"
+        android:layout_gravity="bottom"
+        android:background="#FFFFFFFF"
+        android:elevation="4dp"
+        android:orientation="horizontal"
+        android:padding="8dp">
+
+        <!-- Left column: action buttons -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center_vertical">
+
+            <Button
+                android:id="@+id/btnScan"
+                android:layout_width="match_parent"
+                android:layout_height="44dp"
+                android:layout_marginBottom="4dp"
+                android:background="#1565C0"
+                android:text="Scan"
+                android:textColor="#FFFFFF"
+                android:textSize="13sp"
+                android:textAllCaps="false" />
+
+            <Button
+                android:id="@+id/btnPing"
+                android:layout_width="match_parent"
+                android:layout_height="44dp"
+                android:layout_marginBottom="4dp"
+                android:background="#2E7D32"
+                android:text="Ping"
+                android:textColor="#FFFFFF"
+                android:textSize="13sp"
+                android:textAllCaps="false" />
+
+            <Button
+                android:id="@+id/btnFetchMap"
+                android:layout_width="match_parent"
+                android:layout_height="44dp"
+                android:background="#E65100"
+                android:text="Fetch Map"
+                android:textColor="#FFFFFF"
+                android:textSize="13sp"
+                android:textAllCaps="false" />
+
+        </LinearLayout>
+
+        <!-- 8dp spacer between columns -->
+        <View
+            android:layout_width="8dp"
+            android:layout_height="match_parent" />
+
+        <!-- Right column: status + room name + floor -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center_vertical">
+
+            <TextView
+                android:id="@+id/statusText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="6dp"
+                android:text="Status: —"
+                android:textColor="#212121"
+                android:textSize="12sp"
+                android:maxLines="2"
+                android:ellipsize="end" />
+
+            <EditText
+                android:id="@+id/roomNameInput"
+                android:layout_width="match_parent"
+                android:layout_height="44dp"
+                android:layout_marginBottom="4dp"
+                android:background="@android:drawable/edit_text"
+                android:hint="Room name"
+                android:textSize="13sp"
+                android:inputType="text"
+                android:singleLine="true"
+                android:imeOptions="actionDone"
+                android:padding="4dp" />
+
+            <Spinner
+                android:id="@+id/floorSpinner"
+                android:layout_width="match_parent"
+                android:layout_height="44dp"
+                android:background="@android:drawable/btn_default"
+                android:textSize="13sp" />
+
+        </LinearLayout>
+
+    </LinearLayout>
+
+</FrameLayout>
