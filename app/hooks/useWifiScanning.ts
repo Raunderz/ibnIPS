@@ -54,6 +54,7 @@ export function useWifiScanning(options: UseWifiScanningOptions = {}) {
   }, []);
 
   const startScanning = useCallback(async () => {
+    console.warn('[wifi] startScanning, isSupported=', wifiService.isSupported);
     if (!wifiService.isSupported) {
       setError('Unable to initialize Wi-Fi scanner');
       setIsScanning(false);
@@ -61,6 +62,7 @@ export function useWifiScanning(options: UseWifiScanningOptions = {}) {
     }
 
     const granted = await ensureWifiPermissions();
+    console.warn('[wifi] permissions granted=', granted);
     if (!granted) {
       setError('Wi-Fi permission required');
       setIsScanning(false);
