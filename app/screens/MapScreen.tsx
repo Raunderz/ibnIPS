@@ -3,27 +3,36 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Animated, SafeAreaView, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
-import MapCanvas from '../components/MapCanvas';
+import MapView from '../components/MapView';
 import FloorSelector from '../components/FloorSelector';
 import Button from '../components/Button';
 import Toast from '../components/Toast';
 import LoadingSpinner from '../components/LoadingSpinner';
 import { usePosition } from '../hooks/usePosition';
 import { useMockMode } from '../hooks/useMockMode';
+import { useRooms, getFloors } from '../hooks/useRooms';
+import { useWifiScanning } from '../hooks/useWifiScanning';
 import { useToast } from '../hooks/useToast';
+import { useRoute } from '../hooks/useRoute';
 import { useThemeColors, useFloorColors, ThemeColors } from '../utils/colors';
 import { spacing } from '../utils/spacing';
-import { ROOMS, FLOORS, FLOOR_LABELS } from '../utils/constants';
-import { FloorNumber } from '../types';
+import { FLOOR_LABELS, FLOOR_SHORT_LABELS } from '../utils/constants';
+import { FloorNumber, RouteEntry, NetworkReading } from '../types';
 
 export default function MapScreen() {
   const router = useRouter();
   const { isMockMode, getMockBasePosition } = useMockMode();
+  const rooms = useRooms();
+  const floors = getFloors();
   const [selectedFloor, setSelectedFloor] = useState<FloorNumber>(0);
+  const wifi = useWifiScanning({ enabled: !isMockMode, pauseInBackground: true });
   const { position, status, refresh } = usePosition({
     isMockMode,
     mockBasePosition: getMockBasePosition(),
+    realScans: wifi.scans,
+    floor: selectedFloor,
   });
+  const { routeCollection } = useRoute();
   const { toast, showToast } = useToast();
   const themeColors = useThemeColors();
   const activeFloorColors = useFloorColors();
@@ -33,7 +42,11 @@ export default function MapScreen() {
   const cardTranslateY = useRef(new Animated.Value(16)).current;
   const cardOpacity = useRef(new Animated.Value(0)).current;
 
-  const floorColor = activeFloorColors[FLOORS.indexOf(selectedFloor)] ?? themeColors.primary;
+  const selectedFloorIndex = floors.indexOf(selectedFloor);
+  const floorColor =
+    activeFloorColors[selectedFloorIndex] ?? themeColors.primary;
+  const floorLabel = FLOOR_LABELS[selectedFloor] ?? `Floor ${selectedFloor}`;
+  const floorShortLabel = FLOOR_SHORT_LABELS[selectedFloor] ?? String(selectedFloor);
 
   useEffect(() => {
     Animated.timing(headerOpacity, {
@@ -58,7 +71,15 @@ export default function MapScreen() {
     ]).start();
   }, [cardOpacity, cardTranslateY, headerOpacity]);
 
-  const nearestRoom = ROOMS.find((r) => r.floor === (position?.floor ?? selectedFloor));
+  const nearestRoom = rooms.find((r) => r.floor === (position?.floor ?? selectedFloor));
+
+  // If the (possibly dynamic) floor list no longer contains the selected floor,
+  // fall back to the lowest available floor so the selector stays in sync.
+  useEffect(() => {
+    if (floors.length > 0 && !floors.includes(selectedFloor)) {
+      setSelectedFloor(floors[0]);
+    }
+  }, [floors, selectedFloor]);
 
   const handleRefresh = async () => {
     await refresh();
@@ -67,26 +88,50 @@ export default function MapScreen() {
     }
   };
 
+  // Build tagged locations with actual captured coordinates + Wi-Fi data
+  const taggedLocations = routeCollection.map((entry: RouteEntry) => ({
+    x: entry.x ?? 0,
+    y: entry.y ?? 0,
+    label: entry.room_name,
+    order: entry.order,
+    floor: entry.floor,
+    confidence: entry.confidence ?? 0,
+    networks: entry.networks ?? [],
+  }));
+
+  const handleTagPress = (tag: typeof taggedLocations[0]) => {
+    showToast(`${tag.label} — Confidence: ${tag.confidence}% (${tag.networks.length} APs)`, 'info');
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <Animated.View style={{ opacity: headerOpacity }}>
         <View style={[styles.headerBanner, { backgroundColor: floorColor }]}>
           <Text style={styles.headerTitle}>ICPS</Text>
           <View style={styles.headerBadge}>
-            <Text style={styles.headerBadgeText}>{FLOOR_LABELS[selectedFloor]}</Text>
+            <Text style={styles.headerBadgeText}>{floorLabel}</Text>
           </View>
         </View>
-        <FloorSelector activeFloor={selectedFloor} onSelectFloor={setSelectedFloor} />
+        <FloorSelector
+          activeFloor={selectedFloor}
+          onSelectFloor={setSelectedFloor}
+          floors={floors}
+          getFloorLabel={(floor) => FLOOR_LABELS[floor] ?? `Floor ${floor}`}
+          getFloorShortLabel={(floor) => FLOOR_SHORT_LABELS[floor] ?? String(floor)}
+        />
       </Animated.View>
 
       {!position ? (
         <LoadingSpinner label="Loading location..." />
       ) : (
-        <MapCanvas
+        <MapView
           floor={selectedFloor}
           pinX={position.x}
           pinY={position.y}
           isPinStale={status === 'error'}
+          taggedLocations={taggedLocations}
+          onTagPress={handleTagPress}
+          rooms={rooms}
         />
       )}
 
@@ -119,7 +164,9 @@ export default function MapScreen() {
           </View>
         ) : null}
         {position ? (
-          <Text style={styles.confidenceText}>Confidence: {position.confidence}%</Text>
+          <Text style={styles.confidenceText}>
+            Confidence: {position.confidence}%{isMockMode ? '' : ` · Live Wi-Fi (${wifi.scans.length} APs)`}
+          </Text>
         ) : null}
       </Animated.View>
 

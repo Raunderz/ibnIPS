@@ -5,7 +5,10 @@
   "main": "expo-router/entry",
   "scripts": {
     "android": "expo run:android",
-    "start": "expo start"
+    "start": "expo start",
+    "test": "jest --silent",
+    "test:coverage": "jest --coverage",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "2.2.0",
