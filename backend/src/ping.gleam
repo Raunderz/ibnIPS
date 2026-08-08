@@ -2,8 +2,10 @@
 // POST /api/ping — tag a room with Wi-Fi fingerprints and edge data.
 
 import app_auth
+import db_query
 import gleam/dynamic/decode
 import gleam/int
+import gleam/io
 import gleam/json
 import gleam/list
 import gleam/string
@@ -14,8 +16,6 @@ import models.{
 import sqlight
 import wisp
 
-/// Handle POST /api/ping.
-/// Protected by auth middleware.
 pub fn handle(
   request: wisp.Request,
   conn: sqlight.Connection,
@@ -66,7 +66,6 @@ pub fn handle(
   })
 }
 
-/// Parse the JSON body into a PingRequest, returning Nil on failure.
 fn parse_ping_body(body: String) -> Result(PingRequest, Nil) {
   case json.parse(body, using: ping_request_decoder()) {
     Ok(req) -> Ok(req)
@@ -74,8 +73,6 @@ fn parse_ping_body(body: String) -> Result(PingRequest, Nil) {
   }
 }
 
-/// Validate a ping request — first room must have steps=-1 and direction="",
-/// subsequent rooms must have positive steps and a valid compass direction.
 fn validate_ping(ping: PingRequest) -> Result(Nil, String) {
   let valid_directions = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
 
@@ -101,7 +98,6 @@ fn validate_ping(ping: PingRequest) -> Result(Nil, String) {
   }
 }
 
-/// Process a ping: find or create the node, store fingerprints, and link the edge.
 fn process_ping(
   conn: sqlight.Connection,
   ping: PingRequest,
@@ -110,25 +106,7 @@ fn process_ping(
     Ok(existing_id) -> {
       case insert_fingerprints(conn, existing_id, ping.fingerprints) {
         Error(msg) -> Error(msg)
-        Ok(Nil) -> {
-          case ping.previous_node_id {
-            "" -> Ok(existing_id)
-            _ -> {
-              case
-                insert_edge(
-                  conn,
-                  ping.previous_node_id,
-                  existing_id,
-                  ping.steps,
-                  ping.direction,
-                )
-              {
-                Error(msg) -> Error(msg)
-                Ok(Nil) -> Ok(existing_id)
-              }
-            }
-          }
-        }
+        Ok(Nil) -> link_or_return(conn, existing_id, ping)
       }
     }
     Error(_) -> {
@@ -138,25 +116,7 @@ fn process_ping(
         Ok(Nil) -> {
           case insert_fingerprints(conn, node_id, ping.fingerprints) {
             Error(msg) -> Error(msg)
-            Ok(Nil) -> {
-              case ping.previous_node_id {
-                "" -> Ok(node_id)
-                _ -> {
-                  case
-                    insert_edge(
-                      conn,
-                      ping.previous_node_id,
-                      node_id,
-                      ping.steps,
-                      ping.direction,
-                    )
-                  {
-                    Error(msg) -> Error(msg)
-                    Ok(Nil) -> Ok(node_id)
-                  }
-                }
-              }
-            }
+            Ok(Nil) -> link_or_return(conn, node_id, ping)
           }
         }
       }
@@ -164,20 +124,33 @@ fn process_ping(
   }
 }
 
-/// Generate a deterministic node_id from a room name and floor number.
+fn link_or_return(
+  conn: sqlight.Connection,
+  node_id: String,
+  ping: PingRequest,
+) -> Result(String, String) {
+  case ping.previous_node_id {
+    "" -> Ok(node_id)
+    _ -> {
+      case insert_edge(conn, ping.previous_node_id, node_id, ping.steps, ping.direction) {
+        Ok(Nil) -> Ok(node_id)
+        Error(msg) -> Error(msg)
+      }
+    }
+  }
+}
+
 fn generate_node_id(name: String, floor: Int) -> String {
   let sanitized =
     name
     |> string.lowercase
     |> string.replace(" ", "_")
     |> string.replace("-", "_")
-
   sanitized <> "_f" <> int.to_string(floor)
 }
 
 // --- JSON Decoders ---
 
-/// Decoder for a Wi-Fi fingerprint object.
 fn fingerprint_decoder() -> decode.Decoder(Fingerprint) {
   use bssid <- decode.field("bssid", decode.string)
   use ssid <- decode.field("ssid", decode.string)
@@ -185,7 +158,6 @@ fn fingerprint_decoder() -> decode.Decoder(Fingerprint) {
   decode.success(Fingerprint(bssid, ssid, rssi))
 }
 
-/// Decoder for a full ping request.
 fn ping_request_decoder() -> decode.Decoder(PingRequest) {
   use name <- decode.field("name", decode.string)
   use floor <- decode.field("floor", decode.int)
@@ -201,58 +173,52 @@ fn ping_request_decoder() -> decode.Decoder(PingRequest) {
 
 // --- Database Operations ---
 
-/// Look up an existing node by name and floor.
 fn find_node_by_name(
   conn: sqlight.Connection,
   name: String,
   floor: Int,
 ) -> Result(String, String) {
   let sql = "SELECT node_id FROM nodes WHERE name = ? AND floor = ?"
-  case
-    sqlight.query(sql, on: conn, with: [sqlight.text(name), sqlight.int(floor)], expecting: decode.string)
-  {
+  case db_query.query_as_maps(sql, on: conn, with: [sqlight.text(name), sqlight.int(floor)], expecting: decode.string) {
     Ok([node_id]) -> Ok(node_id)
     Ok([]) -> Error("not found")
     Ok(_) -> Error("multiple matches")
-    Error(e) -> Error(e.message)
+    Error(msg) -> {
+      let _ = io.println("find_node_by_name error: " <> msg)
+      Error(msg)
+    }
   }
 }
 
-/// Insert a new node into the nodes table.
 fn insert_node(
   conn: sqlight.Connection,
   node_id: String,
   name: String,
   floor: Int,
 ) -> Result(Nil, String) {
-  let sql = "INSERT INTO nodes (node_id, name, floor) VALUES (?, ?, ?)"
-  case
-    sqlight.query(sql, on: conn, with: [sqlight.text(node_id), sqlight.text(name), sqlight.int(floor)], expecting: decode.string)
-  {
-    Ok(_) -> Ok(Nil)
-    Error(e) -> Error(e.message)
-  }
+  db_query.exec_with_args(
+    "INSERT INTO nodes (node_id, name, floor) VALUES (?, ?, ?)",
+    on: conn,
+    with: [sqlight.text(node_id), sqlight.text(name), sqlight.int(floor)],
+  )
 }
 
-/// Insert Wi-Fi fingerprints for a node into the fingerprints table.
 fn insert_fingerprints(
   conn: sqlight.Connection,
   node_id: String,
   fingerprints: List(Fingerprint),
 ) -> Result(Nil, String) {
   list.try_each(fingerprints, fn(fp) {
-    let sql =
-      "INSERT INTO fingerprints (bssid, node_id, ssid, rssi) VALUES (?, ?, ?, ?)"
-    case
-      sqlight.query(sql, on: conn, with: [sqlight.text(fp.bssid), sqlight.text(node_id), sqlight.text(fp.ssid), sqlight.int(fp.rssi)], expecting: decode.string)
-    {
-      Ok(_) -> Ok(Nil)
-      Error(e) -> Error(e.message)
-    }
+    db_query.exec_with_args(
+      "INSERT INTO fingerprints (bssid, node_id, ssid, rssi) VALUES (?, ?, ?, ?)",
+      on: conn,
+      with: [sqlight.text(fp.bssid), sqlight.text(node_id), sqlight.text(fp.ssid), sqlight.int(fp.rssi)],
+    )
   })
 }
 
-/// Insert an edge between two nodes, ignoring UNIQUE constraint failures.
+// ponytail: any exec error on edge insert = assume duplicate, return Ok.
+// Edge UNIQUE constraint is the only expected error here.
 fn insert_edge(
   conn: sqlight.Connection,
   from_node: String,
@@ -260,17 +226,16 @@ fn insert_edge(
   steps: Int,
   direction: String,
 ) -> Result(Nil, String) {
-  let sql =
-    "INSERT INTO edges (from_node, to_node, steps, direction) VALUES (?, ?, ?, ?)"
-  case
-    sqlight.query(sql, on: conn, with: [sqlight.text(from_node), sqlight.text(to_node), sqlight.int(steps), sqlight.text(direction)], expecting: decode.string)
-  {
-    Ok(_) -> Ok(Nil)
-    Error(e) -> {
-      case e.code {
-        sqlight.ConstraintUnique -> Ok(Nil)
-        _ -> Error(e.message)
+  case db_query.exec_with_args(
+    "INSERT INTO edges (from_node, to_node, steps, direction) VALUES (?, ?, ?, ?)",
+    on: conn,
+    with: [sqlight.text(from_node), sqlight.text(to_node), sqlight.int(steps), sqlight.text(direction)],
+  ) {
+    Ok(Nil) -> Ok(Nil)
+    Error(msg) ->
+      case string.contains(msg, "UNIQUE") {
+        True -> Ok(Nil)
+        False -> Error(msg)
       }
-    }
   }
 }
