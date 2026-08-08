@@ -24,7 +24,7 @@ import java.util.List;
 public class HttpBackendClient {
 
     private static final String TAG      = "ibnIPS-HTTP";
-    private static final String BASE_URL = "http://localhost:3000";
+    private static final String BASE_URL = "https://ibnips.onrender.com";
     private static final int    TIMEOUT  = 8000; // ms
 
     // ------------------------------------------------------------------
