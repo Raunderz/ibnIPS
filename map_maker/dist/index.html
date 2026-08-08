@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Indoor Map Maker & Mesh Editor</title>
+  <script type="module" crossorigin src="/assets/index-CpWo7upX.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/index-C3QdSA1T.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Navbar Header -->
+    <header class="navbar">
+      <div class="brand">
+        <div class="brand-icon">M</div>
+        <div class="brand-title">Map Maker Mesh Studio</div>
+      </div>
+      <div class="nav-actions">
+        <input type="file" id="db-file-input" accept=".db,.sqlite,.sqlite3" style="display: none;">
+        <input type="file" id="json-file-input" accept=".json" style="display: none;">
+        <input type="file" id="bg-image-input" accept="image/*" style="display: none;">
+
+        <button id="btn-load-db" class="btn">
+          <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"></path></svg>
+          Load DB File
+        </button>
+
+        <button id="btn-import-json" class="btn">
+          <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+          Import JSON
+        </button>
+
+        <button id="btn-export-json" class="btn btn-success">
+          <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+          Export Map JSON
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Workspace -->
+    <main class="workspace">
+      <div id="canvas-container">
+        <canvas id="mesh-canvas"></canvas>
+      </div>
+
+      <!-- Floating Tools Bar -->
+      <div class="tools-bar">
+        <button id="tool-select" class="tool-btn active" title="Select & Move (V)">
+          <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5"></path></svg>
+        </button>
+        <button id="tool-edge" class="tool-btn" title="Add Edge Connection (E)">
+          <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path></svg>
+        </button>
+        <button id="tool-add-node" class="tool-btn" title="Add Node (N)">
+          <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+        </button>
+        <div class="tool-divider"></div>
+        <button id="tool-snap" class="tool-btn active" title="Toggle Grid Snap">
+          <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
+        </button>
+        <button id="tool-delete" class="tool-btn" title="Delete Selected">
+          <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+        </button>
+      </div>
+
+      <!-- Sidebar Inspector -->
+      <aside class="sidebar">
+        <div class="sidebar-header">
+          <div class="sidebar-title">Node Properties</div>
+        </div>
+
+        <div class="sidebar-body">
+          <div class="form-group">
+            <label class="form-label">Floor Layer</label>
+            <div id="floor-tabs" class="floor-tabs">
+              <!-- Floor tabs dynamically generated -->
+            </div>
+          </div>
+
+          <div id="node-props-form" style="opacity: 0.4; pointer-events: none;">
+            <div class="form-group">
+              <label class="form-label">Node ID</label>
+              <input type="text" id="prop-node-id" class="form-input" readonly>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Name / Label</label>
+              <input type="text" id="prop-node-name" class="form-input" placeholder="e.g. Lab 201">
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Floor Number</label>
+              <select id="prop-node-floor" class="form-select">
+                <option value="1">Floor 1</option>
+                <option value="2">Floor 2</option>
+                <option value="3">Floor 3</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Location Type</label>
+              <select id="prop-node-type" class="form-select">
+                <option value="corridor">Corridor Junction</option>
+                <option value="room">Room / Lab</option>
+                <option value="stair">Stairs / Elevator</option>
+                <option value="entrance">Building Entrance</option>
+              </select>
+            </div>
+
+            <div style="display: flex; gap: 10px;">
+              <div class="form-group" style="flex: 1;">
+                <label class="form-label">X Pos</label>
+                <input type="number" id="prop-node-x" class="form-input" readonly>
+              </div>
+              <div class="form-group" style="flex: 1;">
+                <label class="form-label">Y Pos</label>
+                <input type="number" id="prop-node-y" class="form-input" readonly>
+              </div>
+            </div>
+          </div>
+
+          <hr style="border: none; border-top: 1px solid var(--bg-card-border); margin: 20px 0;">
+
+          <div class="form-group">
+            <label class="form-label">Floor Plan Image Overlay</label>
+            <button onclick="document.getElementById('bg-image-input').click()" class="btn" style="width: 100%; justify-content: center;">
+              Upload Blueprint Image
+            </button>
+          </div>
+
+          <div class="stats-badge">
+            <span>Total Nodes:</span>
+            <span id="stat-nodes-count" class="stats-value">0</span>
+          </div>
+          <div class="stats-badge">
+            <span>Total Mesh Edges:</span>
+            <span id="stat-edges-count" class="stats-value">0</span>
+          </div>
+        </div>
+      </aside>
+    </main>
+  </div>
+</body>
+</html>
