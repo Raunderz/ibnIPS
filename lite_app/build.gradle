@@ -1,0 +1,4 @@
+// Root build.gradle — project-level (Gradle 8.x / AGP 8.6 style)
+plugins {
+    id 'com.android.application' version '8.6.0' apply false
+}
