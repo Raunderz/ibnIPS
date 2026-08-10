@@ -498,6 +498,233 @@ After you get the basic app working:
 
 ---
 
+## Phase 7: UI Enhancements
+
+**Constraint:** No external dependencies, no AndroidX, no Material Components.
+All of this is achievable with framework-only APIs: `shape`/`ripple`/`selector`
+drawables, `ViewPropertyAnimator`, `ValueAnimator`, `android.graphics`, and
+`GestureDetector`/`ScaleGestureDetector`. Keep the APK lean (vector drawables,
+no new libraries, no new permissions).
+
+### Tier 1 — Layout & styling (no Java changes, all in `res/`)
+
+**Task 7.1 — Button backgrounds with ripple + rounded corners** (DONE)
+
+**Input to Claude:**
+```
+Create drawable files for my Android app (no AndroidX, minSdk 26):
+
+1. res/drawable/btn_scan.xml, btn_ping.xml, btn_fetch_map.xml, btn_locate_me.xml
+   - Each: <ripple> background wrapping a <shape> with:
+     * rounded corners (radius 8dp)
+     * a subtle vertical gradient (Material color for each button:
+       blue #1565C0, green #2E7D32, orange #E65100, purple #7B1FA2)
+     * darker bottom edge band (like a pressed-leather button)
+   - Ripple color: white at ~30% opacity
+
+2. Use AndroidX-free syntax: <ripple xmlns:android=...>
+   with android:color and a <item android:drawable="@drawable/...">
+
+Return all 4 files (~15 lines each).
+```
+
+**Task 7.2 — Overlay panel polish** (DONE)
+
+**Input to Claude:**
+```
+Polish the bottom control overlay for my Android app (framework-only,
+no AndroidX). Current layout: app/src/main/res/layout/main.xml — a
+FrameLayout with a full-screen MapView + a 180dp bottom LinearLayout
+with 4 buttons, a status TextView, an EditText, and a floor Spinner.
+
+Create res/drawable/panel_bottom.xml:
+- Rounded top corners (radius 16dp, only top corners)
+- White background, 0.97 alpha
+- No external libraries
+
+Then update main.xml to:
+- Use android:background="@drawable/panel_bottom" on the overlay
+- elevation 8dp
+- Increase padding to 12dp, button text to 13sp, status text to 13sp
+- Give the EditText and Spinner rounded backgrounds (12dp radius) via
+  drawables instead of @android:drawable/edit_text / btn_default
+
+Return panel_bottom.xml + the EditText/Spinner background drawables +
+the updated main.xml.
+```
+
+**Task 7.3 — Icons on buttons (vector drawables)** (DONE)
+
+**Input to Claude:**
+```
+Add icons to the 4 buttons in my Android app (framework-only, no AndroidX).
+
+Create res/drawable/ic_scan.xml, ic_ping.xml, ic_map.xml, ic_locate.xml:
+- 24x24dp vector drawables, white fill, stroke-based Material-style paths
+- Scan: Wi-Fi arcs; Ping: location pin; Map: grid/floor-plan; Locate: crosshair
+
+Then in main.xml, add android:drawableStart="@drawable/ic_..." +
+android:drawablePadding="6dp" to each button (reuse existing button
+backgrounds). No Java changes.
+
+Return 4 icon files + the button edits from main.xml.
+```
+
+**Task 7.4 — Theme & status bar** (DONE)
+
+**Input to Claude:**
+```
+Create res/values/themes.xml for my Android app (no AndroidX, minSdk 26,
+targetSdk 34):
+
+<resources>
+  <style name="Theme.ibnIPS" parent="android:Theme.Material.Light.NoActionBar">
+    <item name="android:colorPrimary">#1565C0</item>
+    <item name="android:colorPrimaryDark">#0D47A1</item>
+    <item name="android:colorAccent">#7B1FA2</item>
+    <item name="android:windowBackground">@color/window_bg</item>
+    <item name="android:statusBarColor">#0D47A1</item>
+    <item name="android:windowLightStatusBar">false</item>
+  </style>
+</resources>
+
+Add <color name="window_bg">#FAFAFA</color> to colors.xml.
+Apply via android:theme="@style/Theme.ibnIPS" on <application> in the manifest.
+Return themes.xml, the colors.xml addition, and the manifest edit.
+```
+
+### Tier 2 — MapView rendering improvements (Java, `MapView.java` only)
+
+**Task 7.5 — Fit-map-to-screen on load** (DONE)
+
+**Input to Claude:**
+```
+Update MapView.java in my Android app (framework-only).
+
+Current behavior: fixed SCALE = 2f, origin at top-left, nodes may render
+off-screen. Change it so that when setMapData() is called:
+
+1. Compute the bounding box of all nodes.
+2. Compute a scale factor that fits the whole map into the view with 24px
+   padding on every side (using onSizeChanged/getWidth/getHeight).
+3. Apply a translate so the bounding box centres inside the view.
+4. Keep the public API unchanged (setMapData, setUserPosition).
+
+Keep everything in android.graphics + android.view only. No external
+libraries. Return the full updated MapView.java.
+```
+
+**Task 7.6 — User dot with pulsing halo** (DONE)
+
+**Input to Claude:**
+```
+Enhance the user position dot in MapView.java (framework-only).
+
+Current: single red circle, radius 10dp. Change to:
+- Outer pulsing ring: radius animates 14dp→26dp, alpha 0→0 (fade out),
+  driven by a single ValueAnimator that restarts forever.
+- Inner dot: solid red with a thin white stroke ring around it.
+- Pause/resume: start the animator in onVisibilityChanged(true) /
+  onAttachedToWindow, cancel it when hidden. No leaks.
+- Only animate when a user position is actually set (userX/userY >= 0).
+
+Return the updated MapView.java. Use ValueAnimator + ObjectAnimator only.
+```
+
+**Task 7.7 — Grid background & cleaner map palette** (DONE)
+
+**Input to Claude:**
+```
+Update the onDraw() background rendering in MapView.java (framework-only).
+
+1. Replace the flat #FAFAFA fill with:
+   - Light #F5F5F5 fill
+   - A subtle grid: vertical + horizontal lines every 40px, stroke #E0E0E0,
+     1px, drawn only within the map's bounding box (or full canvas if no map)
+2. Restyle nodes: fill #1565C0 with a 2px white ring stroke (#FFFFFF).
+3. Restyle edges: #90A4AE (blue-grey), 2px, round caps.
+4. Labels: keep 9sp but switch to #455A64, with a white shadow/halo for
+   readability over the grid.
+
+Return the updated MapView.java, onDraw/helper methods only.
+```
+
+### Tier 3 — Micro-interactions (Java, `MainActivity.java`)
+
+**Task 7.8 — Button press scale + status fade** (DONE)
+
+**Input to Claude:**
+```
+Add micro-interactions to MainActivity.java (framework-only, no AndroidX).
+
+1. Button press feedback: on click, animate the pressed button
+   scaleX/scaleY to 0.94 (ViewPropertyAnimator, 100ms), then back to 1.0
+   with a spring-ish OvershootInterpolator (300ms). Do this in the existing
+   click handlers.
+2. Status text: wrap setStatus() so the TextView fades/animates opacity
+   0.3→1.0 over 250ms when the message changes (only when text differs).
+
+Keep it small and dependency-free. Return the diff-relevant methods
+(setStatus + a private animatePress(View) helper + click handler edits).
+```
+
+**Task 7.9 — Animate user dot to new position** (DONE)
+
+**Input to Claude:**
+```
+In MapView.java add a smooth move for the user dot (framework-only):
+
+1. Add setUserPositionAnimated(x, y, floor): runs a ValueAnimator from the
+   current dot position to the target over 600ms with
+   DecelerateInterpolator, calling setUserPosition() per frame.
+2. Keep the existing setUserPosition() (instant) as-is.
+3. In MainActivity.onLocateMeClicked()'s result handler, call
+   setUserPositionAnimated(...) instead of setUserPosition(...).
+
+Return the new method + the MainActivity call-site change.
+```
+
+### Delegation prompts (copy-paste)
+
+**Prompt A: Full UI enhancement pass**
+```
+My Android app is minimal Java, framework-only (no AndroidX, no external
+libraries). APK target < 700KB, minSdk 26.
+
+Enhance the UI without adding dependencies:
+
+1. res/drawable: ripple+rounded button backgrounds (blue/green/orange/purple),
+   panel_bottom.xml (rounded top corners), rounded EditText/Spinner
+   backgrounds, and 4 white vector icons (scan/ping/map/locate).
+2. values/themes.xml: Theme.ibnIPS (Material.Light.NoActionBar parent),
+   colored status bar; wire into the manifest.
+3. MapView.java: fit-map-to-screen on load, pulsing halo user dot, grid
+   background, restyled nodes/edges/labels.
+4. main.xml: apply new backgrounds, icons, spacing, 13sp text.
+5. MainActivity.java: button press-scale animation, status fade,
+   animated user-dot movement.
+
+Do NOT import androidx or any third-party artifact. Keep all rendering in
+android.graphics. Return complete updated files.
+```
+
+### UI enhancement checklist
+
+- [ ] Buttons have rounded corners + ripple press feedback
+- [ ] Buttons show icons (compound drawables)
+- [ ] Overlay panel has rounded top corners, elevation, comfortable padding
+- [ ] EditText + Spinner have custom rounded backgrounds
+- [ ] Status bar + theme colors applied (no AndroidX)
+- [ ] Map auto-fits to screen when loaded
+- [ ] User dot has a pulsing halo
+- [ ] Grid background renders behind the map
+- [ ] Button press-scale animation + status text fade
+- [ ] User dot animates smoothly to new location on "Locate Me"
+- [ ] APK still builds with no external deps (`./gradlew clean assembleRelease`)
+- [ ] APK size stays < 700KB
+
+---
+
 ## Commands You'll Need
 
 ```bash
