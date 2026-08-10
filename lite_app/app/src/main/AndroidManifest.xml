@@ -19,7 +19,7 @@
     <application
         android:label="ibnIPS"
         android:icon="@mipmap/ic_launcher"
-        android:theme="@android:style/Theme.Material.Light.NoActionBar"
+        android:theme="@style/Theme.ibnIPS"
         android:usesCleartextTraffic="true"
         android:allowBackup="false">
 

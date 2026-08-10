@@ -30,7 +30,6 @@ public class MapView extends View {
     // ------------------------------------------------------------------
     // Constants
     // ------------------------------------------------------------------
-    private static final float SCALE        = 2.0f;  // map units → pixels
     private static final float NODE_RADIUS  = 8f;    // dp-ish (scaled below)
     private static final float USER_RADIUS  = 10f;   // dp-ish
     private static final float EDGE_WIDTH   = 1.5f;  // px
@@ -46,6 +45,14 @@ public class MapView extends View {
     private int         userY     = -1;
     private int         userFloor = -1;
 
+    private float       mScale      = 2.0f; // dynamic map units → pixels
+    private float       mTranslateX = PADDING;
+    private float       mTranslateY = PADDING;
+
+    private android.animation.ValueAnimator haloAnimator;
+    private float haloRadiusMult = 0f;
+    private float haloAlphaMult  = 0f;
+
     /** Pre-computed canvas coordinates per nodeId. */
     private final Map<String, float[]> nodeCentres = new HashMap<>();
 
@@ -56,12 +63,16 @@ public class MapView extends View {
     private final Paint nodePaint    = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint labelPaint   = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint userPaint    = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint userStroke   = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint userHalo     = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint compassRing  = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint northPaint   = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint southPaint   = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint compassLabel = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint bgPaint      = new Paint();
+    private final Paint gridPaint    = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint hintPaint    = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint nodeStroke   = new Paint(Paint.ANTI_ALIAS_FLAG);
 
     // ------------------------------------------------------------------
     // Constructors
@@ -86,19 +97,34 @@ public class MapView extends View {
         float density = getResources().getDisplayMetrics().density;
 
         edgePaint.setStyle(Paint.Style.STROKE);
-        edgePaint.setColor(Color.parseColor("#333333"));
-        edgePaint.setStrokeWidth(EDGE_WIDTH);
+        edgePaint.setColor(Color.parseColor("#90A4AE")); // Blue-grey
+        edgePaint.setStrokeWidth(2f * density);
+        edgePaint.setStrokeCap(Paint.Cap.ROUND);
 
         nodePaint.setStyle(Paint.Style.FILL);
         nodePaint.setColor(Color.parseColor("#1565C0")); // Material Blue 800
 
+        nodeStroke.setStyle(Paint.Style.STROKE);
+        nodeStroke.setColor(Color.WHITE);
+        nodeStroke.setStrokeWidth(2f * density);
+
         labelPaint.setStyle(Paint.Style.FILL);
-        labelPaint.setColor(Color.parseColor("#212121"));
+        labelPaint.setColor(Color.parseColor("#455A64"));
         labelPaint.setTextSize(LABEL_SIZE * density);
         labelPaint.setTextAlign(Paint.Align.CENTER);
+        labelPaint.setShadowLayer(3f, 0f, 0f, Color.WHITE); // White halo for readability
 
         userPaint.setStyle(Paint.Style.FILL);
         userPaint.setColor(Color.parseColor("#D32F2F")); // Material Red 700
+
+        userStroke.setStyle(Paint.Style.STROKE);
+        userStroke.setColor(Color.WHITE);
+        userStroke.setStrokeWidth(2f * density);
+
+        userHalo.setStyle(Paint.Style.FILL);
+        userHalo.setColor(Color.parseColor("#D32F2F"));
+
+        initHaloAnimator();
 
         compassRing.setStyle(Paint.Style.STROKE);
         compassRing.setColor(Color.parseColor("#BDBDBD"));
@@ -116,7 +142,11 @@ public class MapView extends View {
         compassLabel.setTextAlign(Paint.Align.CENTER);
 
         bgPaint.setStyle(Paint.Style.FILL);
-        bgPaint.setColor(Color.parseColor("#FAFAFA"));
+        bgPaint.setColor(Color.parseColor("#F5F5F5"));
+
+        gridPaint.setStyle(Paint.Style.STROKE);
+        gridPaint.setColor(Color.parseColor("#E0E0E0"));
+        gridPaint.setStrokeWidth(1f);
 
         hintPaint.setStyle(Paint.Style.FILL);
         hintPaint.setColor(Color.parseColor("#BDBDBD"));
@@ -131,7 +161,7 @@ public class MapView extends View {
     /** Replace the map data and trigger a redraw. */
     public void setMapData(MapResponse data) {
         this.mapData = data;
-        rebuildNodeCentres();
+        recalculateDimensions();
         invalidate();
     }
 
@@ -146,6 +176,32 @@ public class MapView extends View {
         invalidate();
     }
 
+    /**
+     * Update the user position dot with a smooth animation.
+     * Pass floor = -1 to hide the dot.
+     */
+    public void setUserPositionAnimated(int x, int y, int floor) {
+        if (userX < 0 || userY < 0 || userFloor != floor) {
+            // If no current position or floor changes, jump directly
+            setUserPosition(x, y, floor);
+            return;
+        }
+
+        // Animate from current position to new position
+        float startX = userX;
+        float startY = userY;
+        android.animation.ValueAnimator animator = android.animation.ValueAnimator.ofFloat(0f, 1f);
+        animator.setDuration(600);
+        animator.setInterpolator(new android.view.animation.DecelerateInterpolator());
+        animator.addUpdateListener(animation -> {
+            float fraction = (float) animation.getAnimatedValue();
+            int currentX = (int) (startX + (x - startX) * fraction);
+            int currentY = (int) (startY + (y - startY) * fraction);
+            setUserPosition(currentX, currentY, floor);
+        });
+        animator.start();
+    }
+
     // ------------------------------------------------------------------
     // Rendering
     // ------------------------------------------------------------------
@@ -154,6 +210,8 @@ public class MapView extends View {
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
         canvas.drawRect(0, 0, getWidth(), getHeight(), bgPaint);
+
+        drawGrid(canvas);
 
         if (mapData == null) {
             canvas.drawText(
@@ -170,6 +228,19 @@ public class MapView extends View {
         drawNodes(canvas);
         drawUserPosition(canvas);
         drawCompass(canvas);
+    }
+
+    private void drawGrid(Canvas canvas) {
+        float w = getWidth();
+        float h = getHeight();
+        float step = 40f;
+
+        for (float x = 0; x <= w; x += step) {
+            canvas.drawLine(x, 0, x, h, gridPaint);
+        }
+        for (float y = 0; y <= h; y += step) {
+            canvas.drawLine(0, y, w, y, gridPaint);
+        }
     }
 
     private void drawEdges(Canvas canvas) {
@@ -191,6 +262,7 @@ public class MapView extends View {
             float[] centre = nodeCentres.get(node.nodeId);
             if (centre == null) continue;
             canvas.drawCircle(centre[0], centre[1], nodeR, nodePaint);
+            canvas.drawCircle(centre[0], centre[1], nodeR, nodeStroke);
 
             String label = (node.name != null && !node.name.isEmpty()) ? node.name : node.nodeId;
             canvas.drawText(
@@ -202,15 +274,64 @@ public class MapView extends View {
         }
     }
 
+    private void initHaloAnimator() {
+        haloAnimator = android.animation.ValueAnimator.ofFloat(0f, 1f);
+        haloAnimator.setDuration(1500);
+        haloAnimator.setRepeatCount(android.animation.ValueAnimator.INFINITE);
+        haloAnimator.setInterpolator(new android.view.animation.LinearInterpolator());
+        haloAnimator.addUpdateListener(animation -> {
+            float v = (float) animation.getAnimatedValue();
+            haloRadiusMult = v;      // 0 -> 1
+            haloAlphaMult  = 1f - v; // 1 -> 0
+            invalidate();
+        });
+    }
+
+    @Override
+    protected void onAttachedToWindow() {
+        super.onAttachedToWindow();
+        if (haloAnimator != null && !haloAnimator.isRunning()) {
+            haloAnimator.start();
+        }
+    }
+
+    @Override
+    protected void onDetachedFromWindow() {
+        super.onDetachedFromWindow();
+        if (haloAnimator != null) {
+            haloAnimator.cancel();
+        }
+    }
+
+    @Override
+    protected void onVisibilityChanged(android.view.View changedView, int visibility) {
+        super.onVisibilityChanged(changedView, visibility);
+        if (haloAnimator == null) return;
+        if (visibility == android.view.View.VISIBLE) {
+            if (!haloAnimator.isRunning()) haloAnimator.start();
+        } else {
+            haloAnimator.cancel();
+        }
+    }
+
     private void drawUserPosition(Canvas canvas) {
         if (userX < 0 || userY < 0) return;
         float density = getResources().getDisplayMetrics().density;
-        canvas.drawCircle(
-                toCanvasX(userX),
-                toCanvasY(userY),
-                USER_RADIUS * density,
-                userPaint
-        );
+        float cx = toCanvasX(userX);
+        float cy = toCanvasY(userY);
+
+        // Halo
+        if (haloAlphaMult > 0) {
+            float rStart = 14f * density;
+            float rEnd = 26f * density;
+            float r = rStart + (rEnd - rStart) * haloRadiusMult;
+            userHalo.setAlpha((int) (haloAlphaMult * 80)); // Max alpha 80/255
+            canvas.drawCircle(cx, cy, r, userHalo);
+        }
+
+        // Inner dot + white stroke
+        canvas.drawCircle(cx, cy, USER_RADIUS * density, userPaint);
+        canvas.drawCircle(cx, cy, USER_RADIUS * density, userStroke);
     }
 
     private void drawCompass(Canvas canvas) {
@@ -240,12 +361,18 @@ public class MapView extends View {
         canvas.drawText("N", cx, cy - r - 4, compassLabel);
     }
 
+    @Override
+    protected void onSizeChanged(int w, int h, int oldw, int oldh) {
+        super.onSizeChanged(w, h, oldw, oldh);
+        recalculateDimensions();
+    }
+
     // ------------------------------------------------------------------
     // Coordinate helpers
     // ------------------------------------------------------------------
 
-    private float toCanvasX(int mapX) { return mapX * SCALE + PADDING; }
-    private float toCanvasY(int mapY) { return mapY * SCALE + PADDING; }
+    private float toCanvasX(int mapX) { return mapX * mScale + mTranslateX; }
+    private float toCanvasY(int mapY) { return mapY * mScale + mTranslateY; }
 
     /** Rebuild the nodeId → canvas-centre lookup after map data changes. */
     private void rebuildNodeCentres() {
@@ -254,5 +381,52 @@ public class MapView extends View {
         for (MapNode node : mapData.nodes) {
             nodeCentres.put(node.nodeId, new float[]{toCanvasX(node.x), toCanvasY(node.y)});
         }
+    }
+
+    /** Compute the dynamic scale and translations to fit-to-screen. */
+    private void recalculateDimensions() {
+        int w = getWidth();
+        int h = getHeight();
+        if (w <= 0 || h <= 0 || mapData == null || mapData.nodes == null || mapData.nodes.isEmpty()) {
+            mScale = 2.0f;
+            mTranslateX = PADDING;
+            mTranslateY = PADDING;
+            rebuildNodeCentres();
+            return;
+        }
+
+        int minX = Integer.MAX_VALUE;
+        int maxX = Integer.MIN_VALUE;
+        int minY = Integer.MAX_VALUE;
+        int maxY = Integer.MIN_VALUE;
+
+        for (MapNode node : mapData.nodes) {
+            if (node.x < minX) minX = node.x;
+            if (node.x > maxX) maxX = node.x;
+            if (node.y < minY) minY = node.y;
+            if (node.y > maxY) maxY = node.y;
+        }
+
+        float mapWidth = maxX - minX;
+        float mapHeight = maxY - minY;
+
+        if (mapWidth <= 0) mapWidth = 1f;
+        if (mapHeight <= 0) mapHeight = 1f;
+
+        float padding = 24f; // 24px padding on every side
+        float availableWidth = w - 2 * padding;
+        float availableHeight = h - 2 * padding;
+
+        float scaleX = availableWidth / mapWidth;
+        float scaleY = availableHeight / mapHeight;
+        mScale = Math.min(scaleX, scaleY);
+
+        float scaledMapWidth = mapWidth * mScale;
+        float scaledMapHeight = mapHeight * mScale;
+
+        mTranslateX = (w - scaledMapWidth) / 2f - minX * mScale;
+        mTranslateY = (h - scaledMapHeight) / 2f - minY * mScale;
+
+        rebuildNodeCentres();
     }
 }

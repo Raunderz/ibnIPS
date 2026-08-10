@@ -78,6 +78,17 @@ fn handle_request(
       }
     }
 
+    // REMOVE IN PRODUCTION: Endpoint to download the SQLite database file
+    ["api", "db", "download"] -> {
+      case request.method {
+        http.Get -> {
+          wisp.ok()
+          |> wisp.file_download(named: "icps.db", from: "icps.db")
+        }
+        _ -> wisp.method_not_allowed(allowed: [http.Get])
+      }
+    }
+
     _ -> wisp.not_found()
   }
 }

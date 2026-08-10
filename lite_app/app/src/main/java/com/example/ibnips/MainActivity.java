@@ -8,6 +8,8 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
+import android.view.View;
+import android.view.animation.OvershootInterpolator;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
@@ -83,10 +85,10 @@ public class MainActivity extends Activity {
         WifiScanner.requestLocationPermissions(this, PERM_REQ);
 
         // Wire buttons
-        scanButton.setOnClickListener(v -> onScanClicked());
-        pingButton.setOnClickListener(v -> onPingClicked());
-        fetchMapButton.setOnClickListener(v -> onFetchMapClicked());
-        locateMeButton.setOnClickListener(v -> onLocateMeClicked());
+        scanButton.setOnClickListener(v -> { animatePress(v); onScanClicked(); });
+        pingButton.setOnClickListener(v -> { animatePress(v); onPingClicked(); });
+        fetchMapButton.setOnClickListener(v -> { animatePress(v); onFetchMapClicked(); });
+        locateMeButton.setOnClickListener(v -> { animatePress(v); onLocateMeClicked(); });
 
         // Load persistent tagged locations
         loadTaggedLocations();
@@ -270,7 +272,7 @@ public class MainActivity extends Activity {
                     setStatus("Current location of you is: " + locName, false);
                     Toast.makeText(MainActivity.this, "Current location of you is: " + locName, Toast.LENGTH_LONG).show();
                     if (finalBackendPos.x >= 0 && finalBackendPos.y >= 0) {
-                        mapView.setUserPosition(finalBackendPos.x, finalBackendPos.y, finalBackendPos.floor);
+                        mapView.setUserPositionAnimated(finalBackendPos.x, finalBackendPos.y, finalBackendPos.floor);
                     }
                     return;
                 }
@@ -438,11 +440,17 @@ public class MainActivity extends Activity {
     // ------------------------------------------------------------------
 
     private void setStatus(String msg, boolean error) {
+        if (msg == null || msg.equals(statusText.getText().toString())) return;
+
         statusText.setText(msg);
         statusText.setTextColor(error
                 ? Color.parseColor("#D32F2F")
                 : Color.parseColor("#212121"));
         Log.d(TAG, "Status: " + msg);
+
+        // Fade-in animation
+        statusText.setAlpha(0.3f);
+        statusText.animate().alpha(1.0f).setDuration(250).start();
 
         if (error) {
             mainHandler.postDelayed(() -> {
@@ -451,6 +459,22 @@ public class MainActivity extends Activity {
                 }
             }, 4000);
         }
+    }
+
+    private void animatePress(View v) {
+        v.animate()
+            .scaleX(0.94f)
+            .scaleY(0.94f)
+            .setDuration(100)
+            .withEndAction(() -> {
+                v.animate()
+                    .scaleX(1.0f)
+                    .scaleY(1.0f)
+                    .setDuration(300)
+                    .setInterpolator(new OvershootInterpolator())
+                    .start();
+            })
+            .start();
     }
 
     private void runInBackground(Runnable task) {
