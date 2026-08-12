@@ -74,4 +74,12 @@ export function getPositionFromScans(
   };
 }
 
-export { fetchCurrentPosition, fetchRoomList, fetchVisibleNetworks, uploadLocationTag, BASE_URL } from './apiClient';
+export {
+  fetchCurrentPosition,
+  fetchRoomList,
+  fetchVisibleNetworks,
+  uploadLocationTag,
+  fetchMap,
+  authenticate,
+  BASE_URL,
+} from './apiClient';

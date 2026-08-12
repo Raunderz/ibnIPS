@@ -7,9 +7,12 @@ export const HAS_SEEN_ONBOARDING_KEY = 'hasSeenOnboarding';
 export const THEME_ACCENT_KEY = 'themeAccent';
 export const MOCK_MODE_KEY = 'mockModePrefs';
 
-// Backend API
+// Backend API (schema.md)
 export const API_PORT = 3000;
 export const ROOM_LIST_TIMEOUT_MS = 5000;
+export const AUTH_TIMEOUT_MS = 5000;
+export const AUTH_TOKEN_KEY = 'authToken';
+export const DEFAULT_AUTH_EMAIL = 'user@iitb.ac.in';
 
 export const FLOORS = [0, 1, 2, 3] as const;
 

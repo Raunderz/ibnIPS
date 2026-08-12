@@ -1,8 +1,12 @@
 // ICPS/services/routeService.ts
-// Route building service: serialization, validation and backend submit (POST /api/ping).
+// Route building service: validation, serialization and backend submit.
+// Submitting a route follows the schema's room-tagging walk: each room in the
+// walk is sent as one POST /api/ping, chaining previous_node_id to the node_id
+// returned by the previous ping ("" for the first room).
 
 import { Direction, RouteCollection, RouteEntry, isDirection, isPositiveInteger } from '../types';
-import { pingBackend, PingResponse } from './apiClient';
+import { PingRequest, PingResponse } from '../types/api';
+import { pingBackend } from './apiClient';
 
 export interface SerializedRouteEntry {
   room_id: string;
@@ -24,8 +28,27 @@ export function serializeRoute(collection: RouteCollection): SerializedRoute {
   };
 }
 
-// Per-entry validation from spec: room_id non-empty, steps positive integer or
-// null (first entry), direction one of the 8 compass points or null.
+// Build the schema PingRequest for a single room in the walk. previous_node_id
+// is filled in at submit time from the previous ping's returned node_id.
+export function serializePing(entry: RouteEntry, previousNodeId: string): PingRequest {
+  const isFirst = entry.order === 1;
+  return {
+    name: entry.room_name,
+    floor: entry.floor,
+    previous_node_id: isFirst ? '' : previousNodeId,
+    steps: isFirst ? -1 : (entry.steps_from_previous ?? 0),
+    direction: isFirst ? '' : (entry.direction ?? ''),
+    fingerprints: entry.networks.map((network) => ({
+      bssid: network.id,
+      ssid: network.name,
+      rssi: network.rssi,
+    })),
+  };
+}
+
+// Per-entry validation from schema validation rules:
+//   first room  -> previous_node_id "", steps -1, direction ""
+//   linked room -> steps > 0, direction one of the 8 compass points
 export function validateRouteEntry(entry: RouteEntry): string | null {
   if (typeof entry.room_id !== 'string' || entry.room_id.trim().length === 0) {
     return 'room_id must be a non-empty string';
@@ -64,18 +87,38 @@ export function validateRoute(collection: RouteCollection): string | null {
   return null;
 }
 
+export interface SubmitRouteResult {
+  ok: boolean;
+  node_ids?: string[];
+  responses?: PingResponse[];
+  error?: string;
+}
+
+// Send the route to the backend one room at a time, chaining the previous
+// room's returned node_id as previous_node_id for the next ping.
 export async function submitRoute(
-  collection: RouteCollection
-): Promise<{ ok: boolean; response?: PingResponse; error?: string }> {
+  collection: RouteCollection,
+  email = 'user@iitb.ac.in'
+): Promise<SubmitRouteResult> {
   const validationError = validateRoute(collection);
   if (validationError) {
     return { ok: false, error: validationError };
   }
 
   try {
-    const payload = serializeRoute(collection);
-    const response = await pingBackend(payload);
-    return { ok: true, response };
+    const nodeIds: string[] = [];
+    const responses: PingResponse[] = [];
+    let previousNodeId = '';
+
+    for (const entry of collection) {
+      const payload = serializePing(entry, previousNodeId);
+      const response = await pingBackend(payload, email);
+      responses.push(response);
+      nodeIds.push(response.node_id);
+      previousNodeId = response.node_id;
+    }
+
+    return { ok: true, node_ids: nodeIds, responses };
   } catch {
     return { ok: false, error: 'backend unreachable' };
   }

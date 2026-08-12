@@ -49,3 +49,4 @@ export type ButtonVariant = 'primary' | 'secondary' | 'danger';
 export type TagUploadStatus = 'idle' | 'loading' | 'success' | 'error';
 
 export * from './route';
+export * from './api';

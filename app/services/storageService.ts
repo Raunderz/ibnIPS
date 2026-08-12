@@ -1,7 +1,7 @@
 // ICPS/services/storageService.ts
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { HAS_SEEN_ONBOARDING_KEY, THEME_ACCENT_KEY } from '../utils/constants';
+import { AUTH_TOKEN_KEY, HAS_SEEN_ONBOARDING_KEY, THEME_ACCENT_KEY } from '../utils/constants';
 
 export async function getHasSeenOnboarding(): Promise<boolean> {
   try {
@@ -57,6 +57,32 @@ export async function getThemeAccent(): Promise<string | null> {
     return await AsyncStorage.getItem(THEME_ACCENT_KEY);
   } catch {
     return null;
+  }
+}
+
+// Backend auth token (issued by POST /api/auth). Persisted so /api/ping can
+// authenticate without re-prompting on every launch.
+export async function getAuthToken(): Promise<string | null> {
+  try {
+    return await AsyncStorage.getItem(AUTH_TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export async function setAuthToken(token: string): Promise<void> {
+  try {
+    await AsyncStorage.setItem(AUTH_TOKEN_KEY, token);
+  } catch {
+    // Non-fatal — the app falls back to re-authenticating next launch.
+  }
+}
+
+export async function clearAuthToken(): Promise<void> {
+  try {
+    await AsyncStorage.removeItem(AUTH_TOKEN_KEY);
+  } catch {
+    // Non-fatal
   }
 }
 

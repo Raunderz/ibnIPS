@@ -8,6 +8,7 @@ jest.mock('../../services/apiClient', () => ({
 import { pingBackend } from '../../services/apiClient';
 import {
   serializeRoute,
+  serializePing,
   validateRouteEntry,
   validateRoute,
   submitRoute,
@@ -71,6 +72,47 @@ describe('serializeRoute', () => {
     expect(serialized.route[0]).not.toHaveProperty('timestamp');
     expect(serialized.route[0]).not.toHaveProperty('editable');
     expect(serialized.route[0]).not.toHaveProperty('room_name');
+  });
+});
+
+describe('serializePing', () => {
+  it('should map the first room to the schema first-room shape', () => {
+    const entry = makeEntry({ order: 1, networks: [] });
+    expect(serializePing(entry, '')).toEqual({
+      name: 'Room 1',
+      floor: 2,
+      previous_node_id: '',
+      steps: -1,
+      direction: '',
+      fingerprints: [],
+    });
+  });
+
+  it('should chain the previous node id for linked rooms', () => {
+    const entry = makeEntry({
+      order: 2,
+      steps_from_previous: 42,
+      direction: 'NE',
+    });
+    expect(serializePing(entry, 'room_1_f1').previous_node_id).toBe('room_1_f1');
+    expect(serializePing(entry, 'room_1_f1').steps).toBe(42);
+    expect(serializePing(entry, 'room_1_f1').direction).toBe('NE');
+  });
+
+  it('should map networks to fingerprints (bssid/ssid/rssi)', () => {
+    const entry = makeEntry({
+      order: 2,
+      steps_from_previous: 42,
+      direction: 'N',
+      networks: [
+        { id: 'aa:bb:cc', name: 'IITB-WiFi', rssi: -65 },
+        { id: 'dd:ee:ff', name: 'eduroam', rssi: -80 },
+      ],
+    });
+    expect(serializePing(entry, 'prev').fingerprints).toEqual([
+      { bssid: 'aa:bb:cc', ssid: 'IITB-WiFi', rssi: -65 },
+      { bssid: 'dd:ee:ff', ssid: 'eduroam', rssi: -80 },
+    ]);
   });
 });
 
@@ -154,17 +196,31 @@ describe('submitRoute', () => {
     expect(mockedPingBackend).not.toHaveBeenCalled();
   });
 
-  it('should resolve ok when the backend pong succeeds', async () => {
+  it('should resolve ok when the backend ping succeeds', async () => {
     mockedPingBackend.mockResolvedValue({
-      status: 'pong',
-      route_received: 2,
-      message: 'Route data received (not yet stored)',
+      status: 'created',
+      node_id: 'lab_201_f2',
     });
     const result = await submitRoute(validTwoStopRoute());
     expect(result.ok).toBe(true);
-    expect(result.response?.status).toBe('pong');
-    expect(result.response?.route_received).toBe(2);
-    expect(mockedPingBackend).toHaveBeenCalledTimes(1);
+    expect(result.responses).toHaveLength(2);
+    expect(result.node_ids).toEqual(['lab_201_f2', 'lab_201_f2']);
+    // One ping per room in the walk.
+    expect(mockedPingBackend).toHaveBeenCalledTimes(2);
+  });
+
+  it('should chain the previous node id returned by each ping', async () => {
+    let call = 0;
+    mockedPingBackend.mockImplementation(async () => {
+      call += 1;
+      return { status: 'created', node_id: `node_${call}` };
+    });
+    const result = await submitRoute(validTwoStopRoute());
+    expect(result.ok).toBe(true);
+    expect(result.node_ids).toEqual(['node_1', 'node_2']);
+    // First ping: empty previous_node_id; second ping chains node_1.
+    expect(mockedPingBackend.mock.calls[0][0].previous_node_id).toBe('');
+    expect(mockedPingBackend.mock.calls[1][0].previous_node_id).toBe('node_1');
   });
 
   it('should report backend unreachable when the ping throws', async () => {
