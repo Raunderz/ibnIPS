@@ -48,7 +48,7 @@ object ApiClient {
             } else {
                 Retrofit.Builder()
                     .baseUrl(baseUrl)
-                    .client(getOkHttpClient())
+                    .client(getOkHttpClient(preferenceManager))
                     .addConverterFactory(GsonConverterFactory.create())
                     .build()
                     .also { retrofitInstance = it }
@@ -60,14 +60,14 @@ object ApiClient {
      * Returns the shared OkHttpClient instance.
      * The client is intentionally kept single-instance to reduce memory churn.
      */
-    fun getOkHttpClient(): OkHttpClient {
+    fun getOkHttpClient(preferenceManager: PreferenceManager): OkHttpClient {
         val current = okHttpClientInstance
         if (current != null) {
             return current
         }
 
         return synchronized(this) {
-            okHttpClientInstance ?: buildOkHttpClient().also {
+            okHttpClientInstance ?: buildOkHttpClient(preferenceManager).also {
                 okHttpClientInstance = it
             }
         }
@@ -83,14 +83,14 @@ object ApiClient {
         }
     }
 
-    private fun buildOkHttpClient(): OkHttpClient {
+    private fun buildOkHttpClient(preferenceManager: PreferenceManager): OkHttpClient {
         val builder = OkHttpClient.Builder()
             .connectTimeout(Constants.Api.CONNECT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
             .readTimeout(Constants.Api.READ_TIMEOUT_SECONDS, TimeUnit.SECONDS)
             .writeTimeout(Constants.Api.WRITE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
             .callTimeout(Constants.Api.CALL_TIMEOUT_SECONDS, TimeUnit.SECONDS)
 
-        builder.addInterceptor(defaultHeadersInterceptor())
+        builder.addInterceptor(defaultHeadersInterceptor(preferenceManager))
         builder.addInterceptor(networkErrorMappingInterceptor())
         builder.addInterceptor(loggingInterceptor())
 
@@ -101,15 +101,20 @@ object ApiClient {
      * Adds a stable JSON content type plus a defensive user agent.
      * Keep this interceptor lightweight because it runs on every request.
      */
-    private fun defaultHeadersInterceptor(): Interceptor {
+    private fun defaultHeadersInterceptor(preferenceManager: PreferenceManager): Interceptor {
         return Interceptor { chain ->
-            val request = chain.request().newBuilder()
+            val builder = chain.request().newBuilder()
                 .header("Accept", "application/json")
                 .header("Content-Type", "application/json")
                 .header("X-Client", Constants.App.APP_NAME)
-                .build()
 
-            chain.proceed(request)
+            preferenceManager.getAuthToken()?.let { token ->
+                if (token.isNotBlank()) {
+                    builder.header("Authorization", "Bearer $token")
+                }
+            }
+
+            chain.proceed(builder.build())
         }
     }
 

@@ -190,6 +190,15 @@ class PreferenceManager @Inject constructor(
     fun saveApiBaseUrl(url: String) = preferences.edit().putString(Constants.Storage.KEY_API_BASE_URL, url.trim()).apply()
     fun getApiBaseUrl(): String = preferences.getString(Constants.Storage.KEY_API_BASE_URL, Constants.Api.DEFAULT_BASE_URL) ?: Constants.Api.DEFAULT_BASE_URL
 
+    fun getAuthToken(): String? = preferences.getString("key_auth_token", null)
+    fun saveAuthToken(token: String) = preferences.edit().putString("key_auth_token", token).apply()
+
+    fun getUserEmail(): String = preferences.getString("key_user_email", "user@iitb.ac.in") ?: "user@iitb.ac.in"
+    fun saveUserEmail(email: String) = preferences.edit().putString("key_user_email", email).apply()
+
+    fun getLastNodeId(): String = preferences.getString("key_last_node_id", "") ?: ""
+    fun saveLastNodeId(nodeId: String) = preferences.edit().putString("key_last_node_id", nodeId).apply()
+
     fun clearAll() {
         preferences.edit().clear().apply()
     }

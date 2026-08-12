@@ -86,7 +86,7 @@ object Constants {
     }
 
     object Api {
-        const val DEFAULT_BASE_URL = "https://example.com/"
+        const val DEFAULT_BASE_URL = "https://ibnips.onrender.com/"
         const val CONNECT_TIMEOUT_SECONDS = 15L
         const val READ_TIMEOUT_SECONDS = 15L
         const val WRITE_TIMEOUT_SECONDS = 15L
