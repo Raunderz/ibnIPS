@@ -459,3 +459,16 @@ body, html {
   flex-wrap: wrap;
   justify-content: flex-end;
 }
+
+/* Visually hide file inputs while keeping them clickable so the picker dialog opens */
+.hidden-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

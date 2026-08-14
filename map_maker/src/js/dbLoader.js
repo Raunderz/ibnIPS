@@ -1,4 +1,13 @@
 import initSqlJs from 'sql.js';
+import sqlWasmBase64 from './sqlWasmB64.js';
+import { inferType } from './geometry.js';
+
+function base64ToBytes(b64) {
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
 
 export class DbLoader {
   constructor() {
@@ -10,7 +19,7 @@ export class DbLoader {
     if (this.isInitialized) return;
     try {
       this.SQL = await initSqlJs({
-        locateFile: file => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.12.0/${file}`
+        wasmBinary: base64ToBytes(sqlWasmBase64)
       });
       this.isInitialized = true;
       console.log('SQL.js WASM engine initialized successfully');
@@ -55,24 +64,45 @@ export class DbLoader {
             floor: obj.floor !== undefined ? parseInt(obj.floor, 10) : 1,
             x: obj.x !== undefined ? parseFloat(obj.x) : 0,
             y: obj.y !== undefined ? parseFloat(obj.y) : 0,
-            type: obj.type || 'corridor',
+            type: obj.type || inferType(obj.name || `Node ${idx + 1}`),
             raw: obj
           };
         });
       }
     } else if (tableNames.includes('fingerprints')) {
-      // If table is fingerprints (like Wi-Fi / BLE scan records with locations)
-      const res = db.exec("SELECT DISTINCT location_id, floor_id FROM fingerprints;");
-      if (res.length > 0) {
-        const cols = res[0].columns;
-        nodes = res[0].values.map((row, idx) => ({
-          id: `fp_node_${row[0]}`,
-          name: `Location ${row[0]}`,
-          floor: parseInt(row[1] || 1, 10),
-          x: 150 + (idx % 5) * 140,
-          y: 150 + Math.floor(idx / 5) * 140,
-          type: 'location'
-        }));
+      // If table is fingerprints (Wi-Fi / BLE scan records with locations).
+      // Extract one node per distinct location column, supporting both the
+      // current schema (node_id) and a legacy (location_id, floor_id) one.
+      const colsRes = db.exec("PRAGMA table_info(fingerprints);");
+      const fpCols = colsRes.length > 0 ? colsRes[0].values.map(r => r[1]) : [];
+      const nodeCol = fpCols.includes('node_id') ? 'node_id'
+        : fpCols.includes('location_id') ? 'location_id' : null;
+      if (nodeCol) {
+        const floorCol = fpCols.includes('floor_id') ? 'floor_id' : null;
+        const sql = floorCol
+          ? `SELECT DISTINCT ${nodeCol}, ${floorCol} FROM fingerprints;`
+          : `SELECT DISTINCT ${nodeCol} FROM fingerprints;`;
+        const res = db.exec(sql);
+        if (res.length > 0) {
+          const cols = res[0].columns;
+          nodes = res[0].values.map((row, idx) => {
+            const obj = {};
+            cols.forEach((col, cIdx) => { obj[col] = row[cIdx]; });
+            const locId = String(obj[nodeCol]);
+            const floorMatch = locId.match(/_f(\d+)$/i);
+            const floor = floorCol
+              ? parseInt(obj[floorCol], 10)
+              : (floorMatch ? parseInt(floorMatch[1], 10) : 1);
+            return {
+              id: locId,
+              name: `Location ${locId}`,
+              floor: isNaN(floor) ? 1 : floor,
+              x: 150 + (idx % 5) * 140,
+              y: 150 + Math.floor(idx / 5) * 140,
+              type: 'location'
+            };
+          });
+        }
       }
     }
 

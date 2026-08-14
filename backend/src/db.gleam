@@ -76,12 +76,44 @@ UNIQUE(from_node,to_node)
   CREATE INDEX IF NOT EXISTS idx_edges_to ON edges(to_node);
 "
 
-  // Execute each statement in sequence.
-  // The `use` syntax here is Gleam's way of early-returning on error.
-  use _ <- result.try(sqlight.exec(nodes_sql, conn))
-  use _ <- result.try(sqlight.exec(fingerprints_sql, conn))
-  use _ <- result.try(sqlight.exec(edges_sql, conn))
-  use _ <- result.try(sqlight.exec(indexes_sql, conn))
+// --- NEW: users: one row per unique roll number ---
+// user_id is the roll number extracted from email (e.g., "23b1234").
+// email stores the full address for reference.
+// last_login updated every time they authenticate.
+let users_sql =
+  "
+CREATE TABLE IF NOT EXISTS users (
+  user_id TEXT PRIMARY KEY,
+  email TEXT NOT NULL UNIQUE,
+  created_at INTEGER DEFAULT (unixepoch()),
+  last_login INTEGER DEFAULT (unixepoch())
+);
+"
+
+// --- NEW: sessions: active JWT sessions ---
+// session_id is a random UUID stored inside the JWT's "sid" claim.
+// expires_at is unix epoch seconds. A cron job or cleanup could delete old rows.
+// ON DELETE CASCADE: if user is deleted, their sessions are too.
+let sessions_sql =
+  "
+CREATE TABLE IF NOT EXISTS sessions (
+  session_id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  created_at INTEGER DEFAULT (unixepoch()),
+  expires_at INTEGER NOT NULL,
+  FOREIGN KEY(user_id) REFERENCES users(user_id) ON DELETE CASCADE
+);
+"
+
+// Execute each migration in order.
+// `use _ <- result.try(...)` means: if this fails, return the error immediately.
+// If it succeeds, continue to the next line with the result bound to `_`.
+use _ <- result.try(sqlight.exec(nodes_sql, conn))
+use _ <- result.try(sqlight.exec(fingerprints_sql, conn))
+use _ <- result.try(sqlight.exec(edges_sql, conn))
+use _ <- result.try(sqlight.exec(indexes_sql, conn))
+use _ <- result.try(sqlight.exec(users_sql, conn))
+use _ <- result.try(sqlight.exec(sessions_sql, conn))
 
   Ok(Nil)
 }
