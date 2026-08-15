@@ -39,76 +39,51 @@ Floor plans cached locally. Room list cached. App works without internet in mock
 ## Architecture
 
 ```
-Frontend (React Native)
+Frontend (React Native / Kotlin)
   ↓ HTTP JSON
-Backend API (Go / Gleam)
+Backend API (Gleam on Erlang/BEAM)
   ↓ Queries
 SQLite Database
 ```
 
-Frontend handles UI and Wi-Fi scanning. Backend calculates position using weighted signal strength. Database stores location fingerprints.
+Frontend handles UI and Wi-Fi scanning. Backend stores nodes, edges, and Wi-Fi fingerprints. Database holds the graph and signal data.
 
 ## Tech Stack
 
-- **Frontend:** React Native (Android)
-- **Backend:** Go or Gleam (TBD)
+- **Frontend:** React Native (Expo), Kotlin (Jetpack Compose)
+- **Backend:** Gleam (Erlang/BEAM)
 - **Database:** SQLite
-- **Communication:** HTTP/JSON
+- **Map Editor:** Vanilla JS (Vite)
 
 ## Quick Start
 
-### Frontend
+### Frontend (React Native / Expo)
 ```bash
+cd app
 npm install
 npm start
 ```
 
 Requires Android 8.0+. Wi-Fi access permission needed.
 
-### Backend
+### Backend (Gleam)
 ```bash
-go run main.go
-# or
+cd backend
 gleam run
 ```
 
-Expects SQLite database at `./icps.db`. Listens on `:8080`.
-
-### Database
-```bash
-sqlite3 icps.db < schema.sql
-# Seed with sample locations
-sqlite3 icps.db < seed.sql
-```
+Expects SQLite database at `./icps.db`. Listens on port 3000 (or `$PORT`).
 
 ## API Endpoints
 
-### Tag a Location
-```
-POST /api/tag
-{
-  "room_id": "Lab_201",
-  "scans": [
-    {"bssid": "00:11:22:33:44:55", "rssi": -65},
-    ...
-  ]
-}
-```
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `POST` | `/api/auth` | No | Generate JWT token (`@iitb.ac.in` email required) |
+| `POST` | `/api/ping` | Yes | Tag a room with Wi-Fi fingerprints |
+| `GET` | `/api/nodes` | No | List all nodes |
+| `GET` | `/api/map` | No | Full graph (nodes + edges) |
 
-Stores Wi-Fi fingerprint for a known location.
-
-### Get Current Position
-```
-POST /api/locate
-{
-  "scans": [
-    {"bssid": "00:11:22:33:44:55", "rssi": -67},
-    ...
-  ]
-}
-```
-
-Returns `{floor, x, y, room_nearest, confidence}`.
+Full API docs in [`backend/schema.md`](backend/schema.md).
 
 ## Testing
 
@@ -143,7 +118,7 @@ Run mock data scenarios without live signals:
 
 ## Deployment
 
-Backend runs as single binary. Requires SQLite file and permission to listen on port 8080.
+Backend runs on port 3000 (or `$PORT`). Requires SQLite file.
 
 Frontend builds to APK for Android distribution.
 

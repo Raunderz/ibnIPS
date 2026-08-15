@@ -1,3 +1,0 @@
-SDK_DIR=C:\Users\KIIT\AppData\Local\Android\Sdk
-ADB_EXE=C:\Users\KIIT\AppData\Local\Android\Sdk\platform-tools\adb.exe
-ANDROID_HOME=null

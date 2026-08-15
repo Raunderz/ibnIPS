@@ -38,3 +38,13 @@ captures/
 **/tmp/
 backend/icps.db
 /.build-output
+
+# Test coverage
+app/coverage/
+
+# Diagnostic / machine-specific files
+diag_report.txt
+diagnose_result.txt
+sdk_inspection.txt
+sdk_report.txt
+sdk_status_report.txt

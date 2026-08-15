@@ -1,24 +1,29 @@
-# backend
+# ibnIPS Backend
 
-[![Package Version](https://img.shields.io/hexpm/v/backend)](https://hex.pm/packages/backend)
-[![Hex Docs](https://img.shields.io/badge/hex-docs-ffaff3)](https://hexdocs.pm/backend/)
+Gleam backend for the ibnIPS indoor positioning system. Runs on Erlang/BEAM with SQLite.
 
-```sh
-gleam add backend@1
-```
-```gleam
-import backend
+## Requirements
 
-pub fn main() -> Nil {
-  // TODO: An example of the project in use
-}
-```
+- [Gleam](https://gleam.run/) v1.0+
+- Erlang/OTP 26+
 
-Further documentation can be found at <https://hexdocs.pm/backend>.
-
-## Development
+## Setup
 
 ```sh
-gleam run   # Run the project
-gleam test  # Run the tests
+gleam run          # Run the server
+gleam test         # Run tests
+gleam format       # Format code
 ```
+
+The server starts on port 3000 (or `$PORT`). It creates `icps.db` automatically on first run.
+
+## Environment Variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `JWT_SECRET` | Yes (prod) | Secret for signing JWT tokens. Falls back to a hardcoded dev value if unset. |
+| `PORT` | No | Server port (default: `3000`) |
+
+## API
+
+See [`schema.md`](schema.md) for full API documentation.

@@ -1,4 +1,4 @@
-# ICPS Backend API Schema
+# ibnIPS Backend API Schema
 
 Base URL: `http://localhost:3000`
 

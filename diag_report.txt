@@ -1,6 +1,0 @@
---- ADB DEVICES ---
-List of devices attached
-
-
---- AVD LIST ---
-Pixel_9_Pro_XL

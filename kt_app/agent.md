@@ -6,4 +6,4 @@
 - Never create or output Kotlin/Gradle project files directly in the repository root directory.
 - The root of `ibnIPS` is reserved for multi-project subfolders (`app/` for web/flutter, `backend/` for backend, `kt_app/` for Kotlin Android).
 
-Refer to [`agents.md`](file:///c:/Users/KIIT/OneDrive/Documents/GitHub/ibnIPS/kt_app/agents.md) for full architecture and code standards.
+Refer to [`agents.md`](agents.md) for full architecture and code standards.

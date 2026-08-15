@@ -1,9 +1,9 @@
 {
   "expo": {
-    "name": "ICPSTemp",
-    "slug": "icps-temp",
+    "name": "ibnIPS",
+    "slug": "ibnips",
     "version": "1.0.0",
-    "scheme": "icps",
+    "scheme": "ibnips",
     "android": {
       "package": "com.raunderz.icps"
     },
