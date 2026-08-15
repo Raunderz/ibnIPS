@@ -3,16 +3,18 @@
 // Keeping types in one module makes it easy to see the whole data model
 // and avoids circular imports between handler modules.
 
-import gleam/dynamic
 import gleam/dynamic/decode
+import gleam/json
 
-// --- Node: a physical room/location ---
+// --- Types ---
+
+/// A physical room/location.
 pub type Node {
   Node(
     node_id: String,
-    // e.g. "Lab_201" or auto-generated UUID
+    // e.g. "lab_201_f2" (deterministic, from name + floor)
     name: String,
-    // human-readable name
+    // human-readable name, e.g. "Lab 201"
     floor: Int,
     // building floor number
     x: Int,
@@ -22,19 +24,19 @@ pub type Node {
   )
 }
 
-// --- Fingerprint: a single Wi-Fi signal reading ---
+/// A single Wi-Fi signal reading.
 pub type Fingerprint {
   Fingerprint(
     bssid: String,
     // Wi-Fi MAC address, e.g. "aa:bb:cc:dd:ee:ff"
     ssid: String,
-    // Network name, e.g. "IITB-WiFi"
+    // network name, e.g. "IITB-WiFi"
     rssi: Int,
-    // Signal strength in dBm, e.g. -65
+    // signal strength in dBm, e.g. -65
   )
 }
 
-// --- Edge: a connection between two nodes ---
+/// A directed connection between two nodes.
 pub type Edge {
   Edge(
     from_node: String,
@@ -48,7 +50,7 @@ pub type Edge {
   )
 }
 
-// --- PingRequest: what the app sends when tagging a room ---
+/// What the app sends when tagging a room.
 pub type PingRequest {
   PingRequest(
     name: String,
@@ -58,70 +60,33 @@ pub type PingRequest {
     previous_node_id: String,
     // empty string means "first room in chain"
     steps: Int,
-    // steps from previous room (-1 if null)
+    // steps from previous room (-1 if first room)
     direction: String,
-    // direction from previous (empty if null)
+    // direction from previous (empty if first room)
     fingerprints: List(Fingerprint),
     // Wi-Fi scan results
   )
 }
 
-// --- AuthRequest / AuthResponse: login flow ---
+/// What the app sends to log in.
 pub type AuthRequest {
   AuthRequest(email: String)
 }
 
-pub type AuthResponse {
-  AuthResponse(token: String)
-}
-
-// --- ErrorResponse: standard error JSON shape ---
+/// Standard error response shape: `{"error": code, "details": message}`.
 pub type ErrorResponse {
   ErrorResponse(error: String, details: String)
 }
 
-// --- MapData: full graph for frontend ---
+/// Full graph for the frontend map: all nodes and edges.
 pub type MapData {
   MapData(nodes: List(Node), edges: List(Edge))
 }
 
 // --- JSON Decoders ---
 // These functions tell Gleam how to parse JSON into our types.
-// decode.run takes a Dynamic value and tries to match its shape.
 
-pub fn decode_ping_request(
-  json: dynamic.Dynamic,
-) -> Result(PingRequest, List(decode.DecodeError)) {
-  decode.run(json, {
-    use name <- decode.field("name", decode.string)
-    use floor <- decode.field("floor", decode.int)
-    use previous_node_id <- decode.field("previous_node_id", decode.string)
-    use steps <- decode.field("steps", decode.int)
-    use direction <- decode.field("direction", decode.string)
-    use fingerprints <- decode.field(
-      "fingerprints",
-      decode.list(decode_fingerprint()),
-    )
-    decode.success(PingRequest(
-      name,
-      floor,
-      previous_node_id,
-      steps,
-      direction,
-      fingerprints,
-    ))
-  })
-}
-
-fn decode_fingerprint() -> decode.Decoder(Fingerprint) {
-  {
-    use bssid <- decode.field("bssid", decode.string)
-    use ssid <- decode.field("ssid", decode.string)
-    use rssi <- decode.field("rssi", decode.int)
-    decode.success(Fingerprint(bssid, ssid, rssi))
-  }
-}
-
+/// Decoder for an `AuthRequest` from JSON.
 pub fn decode_auth_request() -> decode.Decoder(AuthRequest) {
   use email <- decode.field("email", decode.string)
   decode.success(AuthRequest(email))
@@ -130,8 +95,7 @@ pub fn decode_auth_request() -> decode.Decoder(AuthRequest) {
 // --- JSON Encoders ---
 // These functions convert our types back into JSON for responses.
 
-import gleam/json
-
+/// Encode a `Node` as JSON.
 pub fn encode_node(node: Node) -> json.Json {
   json.object([
     #("node_id", json.string(node.node_id)),
@@ -142,6 +106,7 @@ pub fn encode_node(node: Node) -> json.Json {
   ])
 }
 
+/// Encode an `Edge` as JSON.
 pub fn encode_edge(edge: Edge) -> json.Json {
   json.object([
     #("from_node", json.string(edge.from_node)),
@@ -151,6 +116,7 @@ pub fn encode_edge(edge: Edge) -> json.Json {
   ])
 }
 
+/// Encode an `ErrorResponse` as JSON.
 pub fn encode_error(err: ErrorResponse) -> json.Json {
   json.object([
     #("error", json.string(err.error)),
@@ -158,12 +124,7 @@ pub fn encode_error(err: ErrorResponse) -> json.Json {
   ])
 }
 
-pub fn encode_auth_response(resp: AuthResponse) -> json.Json {
-  json.object([
-    #("token", json.string(resp.token)),
-  ])
-}
-
+/// Encode the full graph (`MapData`) as JSON.
 pub fn encode_map_data(data: MapData) -> json.Json {
   json.object([
     #("nodes", json.array(data.nodes, encode_node)),

@@ -1,9 +1,13 @@
+// env.gleam
+// Environment variable helpers.
+
 import gleam/int
 import gleam/result
 
 @external(erlang, "env_ffi", "get_env")
 fn get_env(key: String) -> Result(String, Nil)
 
+/// The port to listen on, from the `PORT` env var, or `default` if unset.
 pub fn port(default: Int) -> Int {
   case get_env("PORT") {
     Ok(value) -> result.unwrap(int.parse(value), default)
@@ -11,12 +15,12 @@ pub fn port(default: Int) -> Int {
   }
 }
 
-// --- NEW: JWT Secret ---
+// --- JWT Secret ---
 
-/// set JWT_SECRET
-/// via environment variable. Never commit secrets to git.
+/// The JWT signing secret, from the `JWT_SECRET` env var.
 ///
-/// The secret must be at least 32 bytes (256 bits) for HS256 security.
+/// Must be at least 32 bytes (256 bits) for HS256 security. Never commit the
+/// secret to git. Falls back to a dev-only hardcoded value in development.
 pub fn jwt_secret() -> String {
   case get_env("JWT_SECRET") {
     Ok(secret) -> secret

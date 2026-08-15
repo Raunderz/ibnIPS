@@ -37,18 +37,22 @@ Generate an auth token. The email **must** end with `@iitb.ac.in`.
 
 ```json
 {
-  "token": "mK6k4J-gUfQ-LBN9dVIzzLFm4KhoQaSk"
+  "token": "eyJhbGciOiJIUzI1NiIs...",
+  "user_id": "23b1234"
 }
 ```
 
-> Tokens are stored in-memory (per server process) and never expire while the
-> server is running. Request a new one if you lose it.
+> Tokens are **HS256 JWTs** signed with the `JWT_SECRET` env var. They embed a
+> server-side session id (`sid`) checked against the `sessions` table on every
+> request, and expire 24 hours after issuance. Request a new one if yours has
+> expired.
 
 **Errors**
 
 | Status | Body |
 |--------|------|
 | `403` | `{"error":"unauthorized","details":"Email must end with @iitb.ac.in"}` |
+| `400` | `{"error":"invalid_email","details":"Invalid email format: must be roll_no@iitb.ac.in"}` |
 | `400` | `{"error":"invalid_json","details":"Could not parse request body"}` |
 
 ---
@@ -238,6 +242,7 @@ All errors share the same shape:
 | Code | Meaning |
 |------|---------|
 | `invalid_json` | Body was not valid JSON / missing required fields |
+| `invalid_email` | Email did not match the `roll_no@iitb.ac.in` format |
 | `unauthorized` | Bad email domain, or invalid/missing bearer token |
 | `validation_failed` | `steps`/`direction` violated [validation rules](#validation-rules) |
 | `database_error` | SQL/DB failure |

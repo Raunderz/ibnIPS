@@ -10,27 +10,25 @@
 
 import birl
 import db_query
+import gleam/dynamic/decode
 import gleam/http/request
-import gleam/int
 import gleam/json
-import gleam/result
 import gleam/string
-import jwt.{type Claims, type JwtError, Claims}
-import models.{type AuthRequest, AuthResponse, ErrorResponse}
+import jwt.{Claims}
+import models.{type AuthRequest, ErrorResponse}
 import sqlight
 import wisp
 
 // --- Domain Validation ---
 
-/// Check if email ends with @iitb.ac.in (case-insensitive).
-/// Returns True for valid IITB emails.
+/// Check if the email ends with `@iitb.ac.in` (case-insensitive).
 fn is_valid_email(email: String) -> Bool {
   string.ends_with(string.lowercase(email), "@iitb.ac.in")
 }
 
-/// Extract roll number from email.
-/// "23b1234@iitb.ac.in" -> Ok("23b1234")
-/// "notanemail" -> Error
+/// Extract the roll number from an email.
+///
+/// `"23b1234@iitb.ac.in"` -> `Ok("23b1234")`
 fn extract_roll_number(email: String) -> Result(String, String) {
   case string.split(email, "@") {
     [roll_no, "iitb.ac.in"] -> Ok(roll_no)
@@ -40,8 +38,8 @@ fn extract_roll_number(email: String) -> Result(String, String) {
 
 // --- Token Generation ---
 
-/// Generate a cryptographically random session ID.
-/// 32 bytes = 256 bits of entropy, hex-encoded = 64 chars.
+/// Generate a cryptographically random session ID (64-char alphanumeric).
+/// The ID is stored in the `sessions` table and inside the JWT's `sid` claim.
 fn generate_session_id() -> String {
   wisp.random_string(64)
 }
@@ -53,14 +51,10 @@ fn generate_session_id() -> String {
 /// - exp: now + 24 hours (86,400 seconds)
 fn create_jwt(user_id: String, session_id: String, secret: String) -> String {
   let now = birl.to_unix(birl.now())
-  let expires = now + 86_400  // 24 hours in seconds
+  let expires = now + 86_400
+  // 24 hours in seconds
 
-  let claims = Claims(
-    sub: user_id,
-    sid: session_id,
-    iat: now,
-    exp: expires,
-  )
+  let claims = Claims(sub: user_id, sid: session_id, iat: now, exp: expires)
 
   jwt.sign(claims, secret)
 }
@@ -93,7 +87,8 @@ fn insert_session(
   user_id: String,
   expires_at: Int,
 ) -> Result(Nil, String) {
-  let sql = "INSERT INTO sessions (session_id, user_id, expires_at) VALUES (?, ?, ?)"
+  let sql =
+    "INSERT INTO sessions (session_id, user_id, expires_at) VALUES (?, ?, ?)"
   db_query.exec_with_args(sql, on: conn, with: [
     sqlight.text(session_id),
     sqlight.text(user_id),
@@ -107,8 +102,20 @@ fn validate_session(
   conn: sqlight.Connection,
   session_id: String,
 ) -> Result(String, String) {
-  let sql = "SELECT user_id FROM sessions WHERE session_id = ? AND expires_at > unixepoch()"
-  case db_query.query_as_maps(sql, on: conn, with: [sqlight.text(session_id)], expecting: decode.string) {
+  let sql =
+    "SELECT user_id FROM sessions WHERE session_id = ? AND expires_at > unixepoch()"
+  let decoder = {
+    use user_id <- decode.field("user_id", decode.string)
+    decode.success(user_id)
+  }
+  case
+    db_query.query_as_maps(
+      sql,
+      on: conn,
+      with: [sqlight.text(session_id)],
+      expecting: decoder,
+    )
+  {
     Ok([user_id]) -> Ok(user_id)
     Ok([]) -> Error("Session expired or not found")
     Ok(_) -> Error("Multiple sessions with same ID (should never happen)")
@@ -202,10 +209,11 @@ pub fn handle_auth(
                       // Sign JWT and return.
                       let token = create_jwt(user_id, session_id, jwt_secret)
 
-                      let resp_json = json.object([
-                        #("token", json.string(token)),
-                        #("user_id", json.string(user_id)),
-                      ])
+                      let resp_json =
+                        json.object([
+                          #("token", json.string(token)),
+                          #("user_id", json.string(user_id)),
+                        ])
 
                       wisp.ok()
                       |> wisp.string_body(json.to_string(resp_json))
@@ -228,11 +236,11 @@ pub fn handle_auth(
 ///
 /// This is used by require_auth below.
 fn validate_token(
-  request: wisp.Request,
+  req: wisp.Request,
   conn: sqlight.Connection,
   jwt_secret: String,
 ) -> Result(String, wisp.Response) {
-  case request.get_header(request, "authorization") {
+  case request.get_header(req, "authorization") {
     Error(Nil) -> {
       let error_json =
         models.encode_error(ErrorResponse(
@@ -254,7 +262,10 @@ fn validate_token(
               }
               let error_json =
                 models.encode_error(ErrorResponse("unauthorized", msg))
-              Error(wisp.response(401) |> wisp.string_body(json.to_string(error_json)))
+              Error(
+                wisp.response(401)
+                |> wisp.string_body(json.to_string(error_json)),
+              )
             }
             Ok(claims) -> {
               // JWT signature and expiry are valid.
@@ -263,7 +274,10 @@ fn validate_token(
                 Error(msg) -> {
                   let error_json =
                     models.encode_error(ErrorResponse("unauthorized", msg))
-                  Error(wisp.response(401) |> wisp.string_body(json.to_string(error_json)))
+                  Error(
+                    wisp.response(401)
+                    |> wisp.string_body(json.to_string(error_json)),
+                  )
                 }
                 Ok(user_id) -> Ok(user_id)
               }
@@ -276,7 +290,9 @@ fn validate_token(
               "unauthorized",
               "Authorization header must be: Bearer <token>",
             ))
-          Error(wisp.response(401) |> wisp.string_body(json.to_string(error_json)))
+          Error(
+            wisp.response(401) |> wisp.string_body(json.to_string(error_json)),
+          )
         }
       }
     }

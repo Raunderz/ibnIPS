@@ -1,3 +1,6 @@
+// map.gleam
+// GET /api/map — full graph (nodes + edges) for the frontend map.
+
 import db_query
 import gleam/dynamic/decode
 import gleam/json
@@ -7,6 +10,7 @@ import models.{
 import sqlight
 import wisp
 
+/// Handle GET /api/map. Returns `{"nodes": [...], "edges": [...]}`.
 pub fn handle(
   _request: wisp.Request,
   conn: sqlight.Connection,
@@ -25,14 +29,25 @@ pub fn handle(
   }
 }
 
+/// Fetch the full graph: all nodes plus all edges.
 fn get_map_data(conn: sqlight.Connection) -> Result(MapData, String) {
   let nodes_sql = "SELECT node_id, name, floor, x, y FROM nodes ORDER BY name"
   let nodes_result =
-    db_query.query_as_maps(nodes_sql, on: conn, with: [], expecting: node_row_decoder())
+    db_query.query_as_maps(
+      nodes_sql,
+      on: conn,
+      with: [],
+      expecting: node_row_decoder(),
+    )
 
   let edges_sql = "SELECT from_node, to_node, steps, direction FROM edges"
   let edges_result =
-    db_query.query_as_maps(edges_sql, on: conn, with: [], expecting: edge_row_decoder())
+    db_query.query_as_maps(
+      edges_sql,
+      on: conn,
+      with: [],
+      expecting: edge_row_decoder(),
+    )
 
   case nodes_result, edges_result {
     Ok(nodes), Ok(edges) -> Ok(MapData(nodes: nodes, edges: edges))
@@ -41,6 +56,7 @@ fn get_map_data(conn: sqlight.Connection) -> Result(MapData, String) {
   }
 }
 
+/// Decoder for a node row.
 fn node_row_decoder() -> decode.Decoder(Node) {
   use node_id <- decode.field("node_id", decode.string)
   use name <- decode.field("name", decode.string)
@@ -50,10 +66,16 @@ fn node_row_decoder() -> decode.Decoder(Node) {
   decode.success(Node(node_id: node_id, name: name, floor: floor, x: x, y: y))
 }
 
+/// Decoder for an edge row.
 fn edge_row_decoder() -> decode.Decoder(Edge) {
   use from <- decode.field("from_node", decode.string)
   use to <- decode.field("to_node", decode.string)
   use steps <- decode.field("steps", decode.int)
   use direction <- decode.field("direction", decode.string)
-  decode.success(Edge(from_node: from, to_node: to, steps: steps, direction: direction))
+  decode.success(Edge(
+    from_node: from,
+    to_node: to,
+    steps: steps,
+    direction: direction,
+  ))
 }

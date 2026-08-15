@@ -1,3 +1,7 @@
+// db_query.gleam
+// Thin wrapper over the sqlight FFI to run SQL with arguments and decode
+// results into Gleam types.
+
 import gleam/dynamic
 import gleam/dynamic/decode
 import gleam/list
@@ -26,6 +30,7 @@ fn exec_with_args_raw(
   args: List(sqlight.Value),
 ) -> Result(Nil, DbError)
 
+/// Execute a write statement (INSERT/UPDATE/DELETE) with positional args.
 pub fn exec_with_args(
   sql: String,
   on conn: sqlight.Connection,
@@ -37,6 +42,8 @@ pub fn exec_with_args(
   }
 }
 
+/// Run a SELECT and decode each row (returned as a map of column -> value)
+/// through the given decoder.
 pub fn query_as_maps(
   sql: String,
   on conn: sqlight.Connection,
