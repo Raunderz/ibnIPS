@@ -204,9 +204,40 @@ public class MainActivity extends Activity {
                 if (map != null) {
                     cachedMapData = map;
                     mapView.setMapData(map);
+
+                    // Load fingerprints from map.json into local tagged locations
+                    List<TaggedLocation> fromMap = map.toTaggedLocations();
+                    if (!fromMap.isEmpty()) {
+                        for (TaggedLocation tag : fromMap) {
+                            boolean exists = false;
+                            for (TaggedLocation existing : localTaggedLocations) {
+                                if (existing.nodeId.equals(tag.nodeId)) {
+                                    exists = true;
+                                    break;
+                                }
+                            }
+                            if (!exists) {
+                                localTaggedLocations.add(tag);
+                            }
+                        }
+                        // Persist merged list
+                        try {
+                            SharedPreferences prefs = getSharedPreferences("ibnIPS_prefs", MODE_PRIVATE);
+                            JSONArray arr = new JSONArray();
+                            for (TaggedLocation t : localTaggedLocations) {
+                                arr.put(t.toJSON());
+                            }
+                            prefs.edit().putString(PREF_TAGGED, arr.toString()).apply();
+                        } catch (Exception e) {
+                            Log.e(TAG, "Failed to persist map fingerprints", e);
+                        }
+                        Log.d(TAG, "Loaded " + fromMap.size() + " locations from map.json (" + localTaggedLocations.size() + " total)");
+                    }
+
                     int nodeCount = map.nodes != null ? map.nodes.size() : 0;
                     int edgeCount = map.edges != null ? map.edges.size() : 0;
-                    setStatus("Map loaded: " + nodeCount + " nodes, " + edgeCount + " edges", false);
+                    int fpCount = map.fingerprints != null ? map.fingerprints.size() : 0;
+                    setStatus("Map loaded: " + nodeCount + " nodes, " + edgeCount + " edges, " + fpCount + " tagged", false);
                 } else {
                     setStatus("Map fetch failed — see logcat", true);
                 }

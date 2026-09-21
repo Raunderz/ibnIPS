@@ -5,7 +5,9 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Backend response from GET /api/map — contains the full floor graph.
@@ -14,10 +16,12 @@ public class MapResponse {
 
     public List<MapNode> nodes;
     public List<MapEdge> edges;
+    public Map<String, List<WifiScanResult>> fingerprints;
 
     public MapResponse() {
         nodes = new ArrayList<>();
         edges = new ArrayList<>();
+        fingerprints = new HashMap<>();
     }
 
     /**
@@ -59,6 +63,36 @@ public class MapResponse {
             }
         }
 
+        JSONObject fpsObj = obj.optJSONObject("fingerprints");
+        if (fpsObj != null) {
+            for (java.util.Iterator<String> it = fpsObj.keys(); it.hasNext(); ) {
+                String nodeId = it.next();
+                JSONArray fpArr = fpsObj.optJSONArray(nodeId);
+                if (fpArr != null) {
+                    List<WifiScanResult> list = new ArrayList<>();
+                    for (int i = 0; i < fpArr.length(); i++) {
+                        list.add(WifiScanResult.fromJSON(fpArr.getJSONObject(i)));
+                    }
+                    response.fingerprints.put(nodeId, list);
+                }
+            }
+        }
+
         return response;
+    }
+
+    /**
+     * Convert fingerprints from map.json into TaggedLocation objects
+     * for local matching. Needs the nodes list to get name/floor.
+     */
+    public List<TaggedLocation> toTaggedLocations() {
+        List<TaggedLocation> result = new ArrayList<>();
+        for (MapNode node : nodes) {
+            List<WifiScanResult> fp = fingerprints.get(node.nodeId);
+            if (fp != null && !fp.isEmpty()) {
+                result.add(new TaggedLocation(node.name, node.floor, node.nodeId, fp));
+            }
+        }
+        return result;
     }
 }
