@@ -19,6 +19,7 @@ WORKDIR /app
 COPY --from=build /app/build ./build
 COPY --from=build /app/gleam.toml /app/manifest.toml ./
 COPY --from=build /app/src ./src
+COPY map.json ./map.json
 
 EXPOSE 3000
 
