@@ -1,5 +1,7 @@
 # ibnIPS
 
+**I Better Navigate** — Indoor Positioning System.
+
 Indoor positioning system for campus buildings. Uses ambient Wi-Fi signals to determine user location without GPS.
 
 ## What It Does
