@@ -192,11 +192,6 @@ public class MainActivity extends Activity {
     }
 
     private void onFetchMapClicked() {
-        if (authToken == null) {
-            setStatus("Not authenticated — wait or restart", true);
-            return;
-        }
-
         setStatus("Fetching map…", false);
         runInBackground(() -> {
             MapResponse map = backendClient.getMap(authToken);
