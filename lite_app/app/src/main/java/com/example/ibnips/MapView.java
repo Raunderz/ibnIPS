@@ -6,6 +6,9 @@ import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.util.AttributeSet;
+import android.view.GestureDetector;
+import android.view.MotionEvent;
+import android.view.ScaleGestureDetector;
 import android.view.View;
 
 import java.util.HashMap;
@@ -36,6 +39,8 @@ public class MapView extends View {
     private static final float LABEL_SIZE   = 9f;    // sp
     private static final float COMPASS_SIZE = 48f;   // px half-size
     private static final float PADDING      = 16f;   // px from edge
+    private static final float MIN_SCALE    = 0.05f;
+    private static final float MAX_SCALE    = 20f;
 
     // ------------------------------------------------------------------
     // State
@@ -48,6 +53,14 @@ public class MapView extends View {
     private float       mScale      = 2.0f; // dynamic map units → pixels
     private float       mTranslateX = PADDING;
     private float       mTranslateY = PADDING;
+
+    private boolean userHasInteracted = false;
+    private float lastTouchX;
+    private float lastTouchY;
+    private int activePointerId = MotionEvent.INVALID_POINTER_ID;
+
+    private ScaleGestureDetector scaleDetector;
+    private GestureDetector gestureDetector;
 
     private android.animation.ValueAnimator haloAnimator;
     private float haloRadiusMult = 0f;
@@ -152,6 +165,25 @@ public class MapView extends View {
         hintPaint.setColor(Color.parseColor("#BDBDBD"));
         hintPaint.setTextSize(14f * density);
         hintPaint.setTextAlign(Paint.Align.CENTER);
+
+        scaleDetector = new ScaleGestureDetector(getContext(),
+                new ScaleGestureDetector.SimpleOnScaleGestureListener() {
+                    @Override
+                    public boolean onScale(ScaleGestureDetector detector) {
+                        zoomAround(detector.getFocusX(), detector.getFocusY(),
+                                detector.getScaleFactor());
+                        return true;
+                    }
+                });
+
+        gestureDetector = new GestureDetector(getContext(),
+                new GestureDetector.SimpleOnGestureListener() {
+                    @Override
+                    public boolean onDoubleTap(MotionEvent e) {
+                        zoomAround(e.getX(), e.getY(), 1.8f);
+                        return true;
+                    }
+                });
     }
 
     // ------------------------------------------------------------------
@@ -161,6 +193,7 @@ public class MapView extends View {
     /** Replace the map data and trigger a redraw. */
     public void setMapData(MapResponse data) {
         this.mapData = data;
+        this.userHasInteracted = false;
         recalculateDimensions();
         invalidate();
     }
@@ -200,6 +233,75 @@ public class MapView extends View {
             setUserPosition(currentX, currentY, floor);
         });
         animator.start();
+    }
+
+    // ------------------------------------------------------------------
+    // Touch: pan / pinch-zoom / double-tap
+    // ------------------------------------------------------------------
+
+    @Override
+    public boolean onTouchEvent(MotionEvent event) {
+        scaleDetector.onTouchEvent(event);
+        gestureDetector.onTouchEvent(event);
+
+        switch (event.getActionMasked()) {
+            case MotionEvent.ACTION_DOWN: {
+                lastTouchX = event.getX();
+                lastTouchY = event.getY();
+                activePointerId = event.getPointerId(0);
+                break;
+            }
+            case MotionEvent.ACTION_MOVE: {
+                if (scaleDetector.isInProgress()) break;
+                int idx = event.findPointerIndex(activePointerId);
+                if (idx < 0) break;
+                float x = event.getX(idx);
+                float y = event.getY(idx);
+                mTranslateX += x - lastTouchX;
+                mTranslateY += y - lastTouchY;
+                lastTouchX = x;
+                lastTouchY = y;
+                userHasInteracted = true;
+                rebuildNodeCentres();
+                invalidate();
+                break;
+            }
+            case MotionEvent.ACTION_POINTER_UP: {
+                int pointerIndex = event.getActionIndex();
+                int pointerId = event.getPointerId(pointerIndex);
+                if (pointerId == activePointerId) {
+                    int newIndex = pointerIndex == 0 ? 1 : 0;
+                    lastTouchX = event.getX(newIndex);
+                    lastTouchY = event.getY(newIndex);
+                    activePointerId = event.getPointerId(newIndex);
+                }
+                break;
+            }
+            case MotionEvent.ACTION_UP:
+            case MotionEvent.ACTION_CANCEL: {
+                activePointerId = MotionEvent.INVALID_POINTER_ID;
+                break;
+            }
+            default:
+                break;
+        }
+        return true;
+    }
+
+    private void zoomAround(float focusX, float focusY, float factor) {
+        if (mapData == null || factor <= 0f) return;
+        float newScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, mScale * factor));
+        if (newScale == mScale) return;
+
+        float mapX = (focusX - mTranslateX) / mScale;
+        float mapY = (focusY - mTranslateY) / mScale;
+        mScale = newScale;
+        mTranslateX = focusX - mapX * mScale;
+        mTranslateY = focusY - mapY * mScale;
+
+        userHasInteracted = true;
+        rebuildNodeCentres();
+        invalidate();
     }
 
     // ------------------------------------------------------------------
@@ -385,6 +487,11 @@ public class MapView extends View {
 
     /** Compute the dynamic scale and translations to fit-to-screen. */
     private void recalculateDimensions() {
+        if (userHasInteracted) {
+            rebuildNodeCentres();
+            return;
+        }
+
         int w = getWidth();
         int h = getHeight();
         if (w <= 0 || h <= 0 || mapData == null || mapData.nodes == null || mapData.nodes.isEmpty()) {
