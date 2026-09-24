@@ -31,3 +31,11 @@ pub fn jwt_secret() -> String {
     }
   }
 }
+
+// --- Map JSON URL ---
+
+/// Optional remote URL for map.json, from `MAP_JSON_URL`
+/// (OS env var or `.env` file). Returns Error if unset.
+pub fn map_json_url() -> Result(String, Nil) {
+  get_env("MAP_JSON_URL")
+}

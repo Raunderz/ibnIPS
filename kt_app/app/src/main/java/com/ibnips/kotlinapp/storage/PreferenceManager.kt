@@ -193,7 +193,7 @@ class PreferenceManager @Inject constructor(
     fun getAuthToken(): String? = preferences.getString("key_auth_token", null)
     fun saveAuthToken(token: String) = preferences.edit().putString("key_auth_token", token).apply()
 
-    fun getUserEmail(): String = preferences.getString("key_user_email", "user@iitb.ac.in") ?: "user@iitb.ac.in"
+    fun getUserEmail(): String = preferences.getString("key_user_email", "user@kiit.ac.in") ?: "user@kiit.ac.in"
     fun saveUserEmail(email: String) = preferences.edit().putString("key_user_email", email).apply()
 
     fun getLastNodeId(): String = preferences.getString("key_last_node_id", "") ?: ""

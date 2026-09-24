@@ -32,7 +32,7 @@ public class HttpBackendClient {
     // ------------------------------------------------------------------
 
     /**
-     * @param email e.g. "user@iitb.ac.in"
+     * @param email e.g. "user@kiit.ac.in"
      * @return token string, or null on failure
      */
     public String authenticate(String email) {

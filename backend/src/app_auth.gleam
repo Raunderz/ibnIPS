@@ -21,18 +21,18 @@ import wisp
 
 // --- Domain Validation ---
 
-/// Check if the email ends with `@iitb.ac.in` (case-insensitive).
+/// Check if the email ends with `@kiit.ac.in` (case-insensitive).
 fn is_valid_email(email: String) -> Bool {
-  string.ends_with(string.lowercase(email), "@iitb.ac.in")
+  string.ends_with(string.lowercase(email), "@kiit.ac.in")
 }
 
 /// Extract the roll number from an email.
 ///
-/// `"23b1234@iitb.ac.in"` -> `Ok("23b1234")`
+/// `"23b1234@kiit.ac.in"` -> `Ok("23b1234")`
 fn extract_roll_number(email: String) -> Result(String, String) {
   case string.split(email, "@") {
-    [roll_no, "iitb.ac.in"] -> Ok(roll_no)
-    _ -> Error("Invalid email format: must be roll_no@iitb.ac.in")
+    [roll_no, "kiit.ac.in"] -> Ok(roll_no)
+    _ -> Error("Invalid email format: must be roll_no@kiit.ac.in")
   }
 }
 
@@ -136,7 +136,7 @@ fn parse_auth_body(body: String) -> Result(AuthRequest, Nil) {
 // --- Public Handler: POST /api/auth ---
 
 /// POST /api/auth
-/// Request: {"email": "23b1234@iitb.ac.in"}
+/// Request: {"email": "23b1234@kiit.ac.in"}
 /// Response: {"token": "<jwt>", "user_id": "23b1234"}
 ///
 /// Steps:
@@ -170,7 +170,7 @@ pub fn handle_auth(
           let error_json =
             models.encode_error(ErrorResponse(
               "unauthorized",
-              "Email must end with @iitb.ac.in",
+              "Email must end with @kiit.ac.in",
             ))
           wisp.response(403)
           |> wisp.string_body(json.to_string(error_json))

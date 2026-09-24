@@ -23,6 +23,7 @@ The server starts on port 3000 (or `$PORT`). It creates `icps.db` automatically 
 |----------|----------|-------------|
 | `JWT_SECRET` | Yes (prod) | Secret for signing JWT tokens. Falls back to a hardcoded dev value if unset. |
 | `PORT` | No | Server port (default: `3000`) |
+| `MAP_JSON_URL` | No | Remote URL to fetch map.json from for `GET /api/map`. If unset, reads local `map.json`. Also read from a `.env` file in the working directory. |
 
 ## API
 

@@ -96,7 +96,7 @@ public class MainActivity extends Activity {
         // Authenticate in background on startup
         setStatus("Authenticating…", false);
         runInBackground(() -> {
-            String token = backendClient.authenticate("user@iitb.ac.in");
+            String token = backendClient.authenticate("user@kiit.ac.in");
             mainHandler.post(() -> {
                 if (token != null) {
                     authToken = token;

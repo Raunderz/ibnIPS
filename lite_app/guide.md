@@ -130,7 +130,7 @@ Create HttpBackendClient class:
 Methods:
 1. authenticate(email) → String token
    - POST to http://localhost:3000/api/auth
-   - Body: {"email":"user@iitb.ac.in"}
+   - Body: {"email":"user@kiit.ac.in"}
    - Returns: token from response
 
 2. ping(token, nodeName, floor, previousNodeId, steps, direction, wifiScans) → String nodeId
@@ -392,7 +392,7 @@ See full schema in project root (`backend_schema.md`).
 ### Auth
 ```
 POST /api/auth
-Body: {"email":"user@iitb.ac.in"}
+Body: {"email":"user@kiit.ac.in"}
 Response: {"token":"..."}
 ```
 
@@ -456,7 +456,7 @@ I'm building an Android app that scans Wi-Fi and sends data to a Go backend.
 Create HttpBackendClient.java with these methods:
 
 1. authenticate(email: String) -> String token
-   POST /api/auth, body: {"email": "user@iitb.ac.in"}
+   POST /api/auth, body: {"email": "user@kiit.ac.in"}
 
 2. ping(token, name, floor, previousNodeId, steps, direction, wifiScans) -> String nodeId
    POST /api/ping, Bearer auth, WifiScanResult[] converts to JSON

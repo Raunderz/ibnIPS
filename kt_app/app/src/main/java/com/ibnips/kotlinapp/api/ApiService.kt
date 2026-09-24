@@ -15,7 +15,7 @@ interface ApiService {
 
     /**
      * POST /api/auth
-     * Generate an auth token. Email must end with @iitb.ac.in.
+     * Generate an auth token. Email must end with @kiit.ac.in.
      */
     @POST("api/auth")
     suspend fun authenticate(

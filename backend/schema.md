@@ -23,13 +23,13 @@ always `application/json`. Auth uses a bearer token in the `Authorization` heade
 
 ### `POST /api/auth`
 
-Generate an auth token. The email **must** end with `@iitb.ac.in`.
+Generate an auth token. The email **must** end with `@kiit.ac.in`.
 
 **Request body**
 
 ```json
 {
-  "email": "user@iitb.ac.in"
+  "email": "user@kiit.ac.in"
 }
 ```
 
@@ -51,8 +51,8 @@ Generate an auth token. The email **must** end with `@iitb.ac.in`.
 
 | Status | Body |
 |--------|------|
-| `403` | `{"error":"unauthorized","details":"Email must end with @iitb.ac.in"}` |
-| `400` | `{"error":"invalid_email","details":"Invalid email format: must be roll_no@iitb.ac.in"}` |
+| `403` | `{"error":"unauthorized","details":"Email must end with @kiit.ac.in"}` |
+| `400` | `{"error":"invalid_email","details":"Invalid email format: must be roll_no@kiit.ac.in"}` |
 | `400` | `{"error":"invalid_json","details":"Could not parse request body"}` |
 
 ---
@@ -242,7 +242,7 @@ All errors share the same shape:
 | Code | Meaning |
 |------|---------|
 | `invalid_json` | Body was not valid JSON / missing required fields |
-| `invalid_email` | Email did not match the `roll_no@iitb.ac.in` format |
+| `invalid_email` | Email did not match the `roll_no@kiit.ac.in` format |
 | `unauthorized` | Bad email domain, or invalid/missing bearer token |
 | `validation_failed` | `steps`/`direction` violated [validation rules](#validation-rules) |
 | `database_error` | SQL/DB failure |
@@ -251,7 +251,7 @@ All errors share the same shape:
 
 ## Frontend Notes
 
-- **Auth flow:** call `POST /api/auth` once with an `@iitb.ac.in` email, store the
+- **Auth flow:** call `POST /api/auth` once with an `@kiit.ac.in` email, store the
   token, and send it on every `POST /api/ping` as `Authorization: Bearer <token>`.
 - **Building the map:** fetch `GET /api/map`; render `nodes` (with x/y positions
   you assign) and draw `edges` between `from_node` → `to_node`.
