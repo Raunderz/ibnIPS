@@ -6,3 +6,5 @@ build/
 *.ez
 erl_crash.dump
 *.db
+map.json
+.env

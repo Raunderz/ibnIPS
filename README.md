@@ -30,12 +30,12 @@ lite_app (Android, pure Java)
   ↓ HTTP JSON (Bearer JWT)
 backend (Gleam / wisp / mist on BEAM)
   ├─→ SQLite (icps.db)  — users, sessions, nodes, edges, fingerprints
-  └─→ map.json          — local file, or remote URL via MAP_JSON_URL
+  └─→ map.json          — remote URL via MAP_JSON_URL (file not in git), or local fallback
 
-map_maker (browser)  —→  exports map.json  —→  backend / Docker image
+map_maker (browser)  —→  exports map.json  —→  host at MAP_JSON_URL (not committed)
 ```
 
-`GET /api/map` does **not** query SQLite. It serves `map.json` directly: local file by default, or a remote URL if `MAP_JSON_URL` is set.
+`GET /api/map` does **not** query SQLite. It serves map data from `MAP_JSON_URL` when set; otherwise falls back to a local `map.json`. **`map.json` is gitignored** — it is not stored in the repository.
 
 ## Backend
 
@@ -55,10 +55,10 @@ gleam format
 ```bash
 cd backend
 docker build -t ibnips-backend .
-docker run -p 3000:3000 -e JWT_SECRET=... ibnips-backend
+docker run -p 3000:3000 -e JWT_SECRET=... -e MAP_JSON_URL=... ibnips-backend
 ```
 
-The image copies `map.json` in at build time. Override at runtime with `MAP_JSON_URL` if needed.
+`map.json` is not copied into the image. Provide `MAP_JSON_URL` at runtime (Render env, `-e`, or `.env`).
 
 ### Environment Variables
 
@@ -68,13 +68,13 @@ Read from OS env first, then a `.env` file in the working directory (supports `#
 |----------|----------|-------------|
 | `JWT_SECRET` | Yes (prod) | HS256 signing secret. Falls back to a hardcoded dev value if unset. |
 | `PORT` | No | Listen port (default `3000`) |
-| `MAP_JSON_URL` | No | Remote URL for `GET /api/map`. If unset, reads local `map.json`. |
+| `MAP_JSON_URL` | Yes (prod) | Remote URL for `GET /api/map`. Set in Render (or local `.env`). `map.json` is gitignored. |
 
 Example `.env`:
 
 ```env
 JWT_SECRET=change_me_in_production
-MAP_JSON_URL=https://example.com/maps/map.json
+# set MAP_JSON_URL in Render env (or local .env) — map.json is not in git
 ```
 
 ### API
@@ -85,7 +85,7 @@ MAP_JSON_URL=https://example.com/maps/map.json
 | `POST` | `/api/auth` | No | Issue JWT (`@kiit.ac.in` email; roll number becomes `user_id`) |
 | `POST` | `/api/ping` | Yes | Tag a room with Wi-Fi fingerprints |
 | `GET` | `/api/nodes` | No | List all nodes |
-| `GET` | `/api/map` | No | Full graph from `map.json` / `MAP_JSON_URL` |
+| `GET` | `/api/map` | No | Full graph from `MAP_JSON_URL` (or local fallback `map.json`) |
 | `GET` | `/api/db/download` | No | **Dev-only:** download `icps.db` — disable in production |
 
 Full API docs: [`backend/schema.md`](backend/schema.md). Backend details: [`backend/README.md`](backend/README.md).
@@ -171,7 +171,7 @@ Treat `lite_app` + `backend` as source of truth for behavior and API contracts.
 
 ## Deployment
 
-- Backend: port `3000` (or `$PORT`), needs `JWT_SECRET` in production; current deploy target `https://ibnips.onrender.com`
+- Backend: port `3000` (or `$PORT`), needs `JWT_SECRET` + `MAP_JSON_URL` in production; current deploy target `https://ibnips.onrender.com`
 - Disable or gate `GET /api/db/download` in production
 - Docker image available (`backend/Dockerfile`); no docker-compose in-repo
 - lite_app builds to APK for Android distribution

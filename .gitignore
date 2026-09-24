@@ -37,6 +37,9 @@ captures/
 **/intermediates/
 **/tmp/
 backend/icps.db
+backend/map.json
+backend/.env
+.env
 /.build-output
 
 # Test coverage
