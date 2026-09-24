@@ -14,6 +14,9 @@ RUN gleam build --target erlang
 # Runtime stage: only the compiled artifact plus metadata.
 FROM ghcr.io/gleam-lang/gleam:v1.16.0-erlang-alpine
 
+# CA certs required for HTTPS fetches (MAP_JSON_URL) via Erlang ssl/httpc.
+RUN apk add --no-cache ca-certificates
+
 WORKDIR /app
 
 COPY --from=build /app/build ./build

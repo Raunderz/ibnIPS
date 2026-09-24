@@ -2,6 +2,7 @@
 // GET /api/map — full graph (nodes + edges) from MAP_JSON_URL or map.json.
 
 import env
+import gleam/io
 import gleam/json
 import models
 import sqlight
@@ -27,7 +28,11 @@ pub fn handle(
 
 fn load_from_url(url: String) -> wisp.Response {
   case fetch_url(url) {
-    Error(msg) -> error_response("map_fetch_error", msg)
+    Error(msg) -> {
+      // Log the real fetch failure — Render only shows these lines.
+      io.println("MAP_JSON_URL fetch failed: " <> msg)
+      error_response("map_fetch_error", msg)
+    }
     Ok(content) -> ok_response(content)
   }
 }
