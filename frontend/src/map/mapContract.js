@@ -21,33 +21,33 @@ function isRecord(value) {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
 
-function readString(value, field) {
+function readString(value, field, source) {
   if (typeof value !== 'string') {
-    throw new MapContractError(`Map ${field} must be a string.`)
+    throw new MapContractError(`${source} ${field} must be a string.`)
   }
 
   return value
 }
 
-function readInteger(value, field) {
+function readInteger(value, field, source) {
   if (!Number.isInteger(value)) {
-    throw new MapContractError(`Map ${field} must be an integer.`)
+    throw new MapContractError(`${source} ${field} must be an integer.`)
   }
 
   return value
 }
 
-function parseNode(value, index) {
+function parseNode(value, index, source) {
   if (!isRecord(value)) {
-    throw new MapContractError(`Map node at index ${index} is invalid.`)
+    throw new MapContractError(`${source} at index ${index} is invalid.`)
   }
 
   return {
-    nodeId: readString(value.node_id, 'node_id'),
-    name: readString(value.name, 'name'),
-    floor: readInteger(value.floor, 'floor'),
-    x: readInteger(value.x, 'x'),
-    y: readInteger(value.y, 'y'),
+    nodeId: readString(value.node_id, 'node_id', source),
+    name: readString(value.name, 'name', source),
+    floor: readInteger(value.floor, 'floor', source),
+    x: readInteger(value.x, 'x', source),
+    y: readInteger(value.y, 'y', source),
   }
 }
 
@@ -56,16 +56,16 @@ function parseEdge(value, index) {
     throw new MapContractError(`Map edge at index ${index} is invalid.`)
   }
 
-  const direction = readString(value.direction, 'direction')
+  const direction = readString(value.direction, 'direction', 'Map edge')
 
   if (direction !== '' && !COMPASS_DIRECTIONS.has(direction)) {
     throw new MapContractError(`Map edge direction "${direction}" is invalid.`)
   }
 
   return {
-    fromNode: readString(value.from_node, 'from_node'),
-    toNode: readString(value.to_node, 'to_node'),
-    steps: readInteger(value.steps, 'steps'),
+    fromNode: readString(value.from_node, 'from_node', 'Map edge'),
+    toNode: readString(value.to_node, 'to_node', 'Map edge'),
+    steps: readInteger(value.steps, 'steps', 'Map edge'),
     direction,
   }
 }
@@ -78,9 +78,9 @@ function parseFingerprint(value, nodeId, index) {
   }
 
   return {
-    bssid: readString(value.bssid, 'bssid'),
-    ssid: readString(value.ssid, 'ssid'),
-    rssi: readInteger(value.rssi, 'rssi'),
+    bssid: readString(value.bssid, 'bssid', 'Fingerprint'),
+    ssid: readString(value.ssid, 'ssid', 'Fingerprint'),
+    rssi: readInteger(value.rssi, 'rssi', 'Fingerprint'),
   }
 }
 
@@ -111,6 +111,14 @@ function parseFingerprints(value) {
   )
 }
 
+export function parseNodeList(payload) {
+  if (!Array.isArray(payload)) {
+    throw new MapContractError('The nodes response must be an array.')
+  }
+
+  return payload.map((node, index) => parseNode(node, index, 'Node'))
+}
+
 export function parseMapResponse(payload) {
   if (!isRecord(payload)) {
     throw new MapContractError('The map response must be an object.')
@@ -121,7 +129,7 @@ export function parseMapResponse(payload) {
   }
 
   return {
-    nodes: payload.nodes.map(parseNode),
+    nodes: payload.nodes.map((node, index) => parseNode(node, index, 'Map node')),
     edges: payload.edges.map(parseEdge),
     fingerprints: parseFingerprints(payload.fingerprints),
   }

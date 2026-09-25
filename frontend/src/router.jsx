@@ -1,4 +1,4 @@
-import { createBrowserRouter } from 'react-router-dom'
+import { createBrowserRouter, redirect } from 'react-router-dom'
 import RouteErrorPage from './components/RouteErrorPage.jsx'
 import RouteLoading from './components/RouteLoading.jsx'
 
@@ -21,18 +21,30 @@ export const router = createBrowserRouter([
             lazy: () => loadRoute(() => import('./pages/HomePage.jsx')),
           },
           {
-            path: 'map',
-            lazy: () => loadRoute(() => import('./pages/MapPage.jsx')),
-          },
-          {
             path: 'account',
             lazy: () => loadRoute(() => import('./routes/AccountRoute.jsx')),
           },
         ],
       },
       {
+        path: 'login',
+        lazy: () => loadRoute(() => import('./pages/LoginPage.jsx')),
+      },
+      {
         path: 'sign-in',
-        lazy: () => loadRoute(() => import('./pages/SignInPage.jsx')),
+        loader: () => redirect('/login'),
+      },
+      {
+        path: 'search',
+        lazy: () => loadRoute(() => import('./pages/SearchPage.jsx')),
+      },
+      {
+        path: 'map',
+        lazy: () => loadRoute(() => import('./pages/MapPage.jsx')),
+      },
+      {
+        path: 'navigate',
+        lazy: () => loadRoute(() => import('./pages/NavigationPage.jsx')),
       },
       {
         path: '*',

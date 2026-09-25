@@ -1,3 +1,5 @@
+const ENTRY_ROUTES = new Set(['/', '/login', '/sign-in'])
+
 export function getSafeReturnTo(value) {
   if (
     typeof value === 'string' &&
@@ -5,7 +7,7 @@ export function getSafeReturnTo(value) {
     !value.startsWith('//')
   ) {
     const pathname = value.split(/[?#]/, 1)[0]
-    return pathname === '/sign-in' ? '/account' : value
+    return ENTRY_ROUTES.has(pathname) ? '/account' : value
   }
 
   return '/account'

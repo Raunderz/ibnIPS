@@ -1,73 +1,91 @@
-import { Home, Map, UserRound } from 'lucide-react'
-import { NavLink } from 'react-router-dom'
+import { Home, Map as MapIcon, Search, UserRound } from 'lucide-react'
+import { Link, NavLink } from 'react-router-dom'
+import BrandMark from './BrandMark.jsx'
+import { useAuthSession } from '../hooks/useAuthSession.js'
+import { getUserInitials } from '../utils/location.js'
 
-const navigationItems = [
+const tabItems = [
   { to: '/', label: 'Home', icon: Home, end: true },
-  { to: '/map', label: 'Map', icon: Map, end: false },
+  { to: '/search', label: 'Search', icon: Search, end: false },
+  { to: '/map', label: 'Map', icon: MapIcon, end: false },
   { to: '/account', label: 'Account', icon: UserRound, end: false },
 ]
 
-function getLinkClass({ isActive }) {
+function getDesktopLinkClass({ isActive }) {
   return [
-    'flex min-h-12 items-center gap-3 rounded-2xl px-4 text-sm font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-400',
+    'inline-flex min-h-11 items-center rounded-2xl px-3 text-sm font-semibold transition-colors duration-150',
     isActive
-      ? 'bg-brand-500/15 text-brand-200'
-      : 'text-slate-400 active:bg-white/5 active:text-white',
+      ? 'bg-white/8 text-white'
+      : 'text-slate-400 hover:text-white focus-visible:text-white',
   ].join(' ')
 }
 
-export function DesktopSidebar() {
+export function AppTopBar() {
+  const { session } = useAuthSession()
+
   return (
-    <aside className="fixed inset-y-0 left-0 z-40 hidden w-64 border-r border-white/8 bg-ink-950/95 px-4 py-6 backdrop-blur lg:flex lg:flex-col">
-      <div className="px-2">
-        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-          Navigation
-        </p>
+    <header className="sticky top-0 z-30 border-b border-white/8 bg-ink-950/88 px-3 pt-[max(0.5rem,env(safe-area-inset-top))] backdrop-blur-xl">
+      <div className="mx-auto flex h-14 w-full max-w-xl items-center gap-2">
+        <BrandMark showTagline />
+        <nav
+          className="ml-auto hidden items-center gap-1 lg:flex"
+          aria-label="Primary navigation"
+        >
+          {tabItems.map(({ to, label, icon: Icon, end }) => (
+            <NavLink
+              key={to}
+              to={to}
+              end={end}
+              className={getDesktopLinkClass}
+            >
+              <Icon size={17} className="mr-2" aria-hidden="true" />
+              {label}
+            </NavLink>
+          ))}
+        </nav>
+        <Link
+          to={session ? '/account' : '/login'}
+          aria-label={session ? 'Open account' : 'Sign in'}
+          className="ml-auto grid size-11 shrink-0 place-items-center rounded-2xl border border-white/10 bg-white/5 text-[13px] font-bold text-white transition-colors duration-150 active:bg-white/10 lg:ml-0"
+        >
+          {session ? getUserInitials(session.userId) : <UserRound size={19} />}
+        </Link>
       </div>
-      <nav className="mt-4 flex flex-col gap-2" aria-label="Primary navigation">
-        {navigationItems.map(({ to, label, icon: Icon, end }) => (
-          <NavLink
-            key={to}
-            to={to}
-            end={end}
-            className={getLinkClass}
-          >
-            <Icon size={20} strokeWidth={2} aria-hidden="true" />
-            {label}
-          </NavLink>
-        ))}
-      </nav>
-      <div className="mt-auto rounded-2xl border border-white/8 bg-white/4 p-4">
-        <p className="text-sm font-semibold text-white">Foundation phase</p>
-        <p className="mt-1 text-xs leading-5 text-slate-400">
-          Map rendering and navigation arrive in a later phase.
-        </p>
-      </div>
-    </aside>
+    </header>
   )
 }
 
-export function BottomNavigation() {
+export function BottomTabBar() {
   return (
     <nav
-      className="fixed inset-x-0 bottom-0 z-50 border-t border-white/10 bg-ink-950/95 px-2 pt-2 backdrop-blur-xl lg:hidden"
+      className="fixed inset-x-0 bottom-0 z-40 border-t border-white/8 bg-ink-950/94 backdrop-blur-xl lg:hidden"
       aria-label="Primary navigation"
     >
-      <div className="mx-auto grid max-w-md grid-cols-3 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
-        {navigationItems.map(({ to, label, icon: Icon, end }) => (
+      <div className="mx-auto grid max-w-xl grid-cols-4 px-1 pt-1.5 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+        {tabItems.map(({ to, label, icon: Icon, end }) => (
           <NavLink
             key={to}
             to={to}
             end={end}
             className={({ isActive }) =>
               [
-                'flex min-h-14 flex-col items-center justify-center gap-1 rounded-2xl px-2 text-xs font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-brand-400',
+                'flex min-h-14 flex-col items-center justify-center gap-1 rounded-2xl text-[11px] font-semibold transition-colors duration-150',
                 isActive ? 'text-brand-300' : 'text-slate-500',
               ].join(' ')
             }
           >
-            <Icon size={21} strokeWidth={2} aria-hidden="true" />
-            {label}
+            {({ isActive }) => (
+              <>
+                <span
+                  className={`size-1 rounded-full transition-opacity duration-150 ${
+                    isActive ? 'bg-brand-400 opacity-100' : 'opacity-0'
+                  }`}
+                  aria-hidden="true"
+                />
+                <Icon size={21} aria-hidden="true" />
+                {label}
+              </>
+            )}
           </NavLink>
         ))}
       </div>

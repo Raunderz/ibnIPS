@@ -7,11 +7,12 @@ export default function PageTransition() {
 
   return (
     <motion.main
+      id="main-content"
       key={location.pathname}
-      initial={reduceMotion ? false : { opacity: 0, y: 8 }}
+      initial={reduceMotion ? false : { opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: reduceMotion ? 0 : 0.2, ease: 'easeOut' }}
-      className="mx-auto w-full max-w-5xl px-4 pt-4 pb-[calc(7.5rem+env(safe-area-inset-bottom))] sm:px-6 lg:px-8 lg:pt-8 lg:pb-12"
+      transition={{ duration: reduceMotion ? 0 : 0.18, ease: 'easeOut' }}
+      className="mx-auto w-full max-w-xl px-4 pt-5 pb-[calc(5.75rem+env(safe-area-inset-bottom))] sm:px-5"
     >
       <Outlet />
     </motion.main>

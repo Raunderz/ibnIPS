@@ -2,8 +2,17 @@ const STORAGE_KEY = 'ibnips.auth.session'
 const listeners = new Set()
 
 let cachedSession = null
+let cachedEndReason = null
 let expiryTimer = null
 let storageRead = false
+
+class SessionTokenError extends TypeError {
+  constructor(message, code) {
+    super(message)
+    this.name = 'SessionTokenError'
+    this.code = code
+  }
+}
 
 function decodeJwtPayload(token) {
   const segments = token.split('.')
@@ -22,12 +31,28 @@ function decodeJwtPayload(token) {
   }
 }
 
-function createSession(token, userId) {
+function readExpiry(token) {
   const payload = decodeJwtPayload(token)
-  const expiresAt = Number(payload?.exp) * 1000
+  const expiry = Number(payload?.exp)
 
-  if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
-    throw new TypeError('The backend returned an invalid or expired token.')
+  return Number.isFinite(expiry) ? expiry * 1000 : null
+}
+
+function createSession(token, userId) {
+  const expiresAt = readExpiry(token)
+
+  if (expiresAt === null) {
+    throw new SessionTokenError(
+      'The backend returned a token without an expiry.',
+      'invalid',
+    )
+  }
+
+  if (expiresAt <= Date.now()) {
+    throw new SessionTokenError(
+      'The backend returned an expired token.',
+      'expired',
+    )
   }
 
   return {
@@ -67,8 +92,9 @@ function readStorage() {
 
     const parsed = JSON.parse(storedValue)
     return createSession(parsed.token, parsed.userId)
-  } catch {
+  } catch (error) {
     removeStoredSession()
+    cachedEndReason = error?.code === 'expired' ? 'expired' : 'invalid'
     return null
   }
 }
@@ -94,6 +120,7 @@ function scheduleExpiry(session) {
     }
 
     cachedSession = null
+    cachedEndReason = 'expired'
     expiryTimer = null
     removeStoredSession()
     notifyListeners()
@@ -117,9 +144,14 @@ export function getAuthSession() {
   return cachedSession
 }
 
+export function getAuthSessionEndReason() {
+  return cachedEndReason
+}
+
 export function saveAuthSession(token, userId) {
   const session = createSession(token, userId)
   cachedSession = session
+  cachedEndReason = null
   storageRead = true
   persistSession(session)
   scheduleExpiry(session)
@@ -127,8 +159,9 @@ export function saveAuthSession(token, userId) {
   return session
 }
 
-export function clearAuthSession() {
+export function clearAuthSession(reason = 'signed-out') {
   cachedSession = null
+  cachedEndReason = reason
   storageRead = true
   window.clearTimeout(expiryTimer)
   expiryTimer = null

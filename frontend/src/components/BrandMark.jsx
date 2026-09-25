@@ -1,20 +1,25 @@
 import { Compass } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
-export default function BrandMark() {
+export default function BrandMark({ showTagline = false }) {
   return (
     <Link
       to="/"
-      className="inline-flex min-h-12 items-center gap-3 rounded-2xl px-1 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand-400"
+      className="inline-flex min-h-11 items-center gap-2.5 rounded-2xl pr-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-300"
+      aria-label="ibnIPS home"
     >
-      <span className="grid size-10 shrink-0 place-items-center rounded-2xl bg-brand-500 text-ink-950 shadow-lg shadow-brand-950/40">
-        <Compass size={22} strokeWidth={2.2} aria-hidden="true" />
+      <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-brand-500 text-ink-950 shadow-accent">
+        <Compass size={19} strokeWidth={2.4} aria-hidden="true" />
       </span>
-      <span className="leading-tight">
-        <span className="block text-base font-bold tracking-tight text-white">
+      <span className="flex flex-col leading-none">
+        <span className="text-[15px] font-extrabold tracking-[-0.02em] text-white">
           ibnIPS
         </span>
-        <span className="block text-xs text-slate-400">Indoor wayfinding</span>
+        {showTagline ? (
+          <span className="mt-1 hidden text-[11px] font-medium text-slate-500 sm:block">
+            Indoor wayfinding
+          </span>
+        ) : null}
       </span>
     </Link>
   )

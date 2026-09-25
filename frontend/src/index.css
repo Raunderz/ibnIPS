@@ -1,58 +1,164 @@
 @import "tailwindcss";
 
 @theme {
-  --color-ink-950: #070b14;
-  --color-ink-900: #0b1220;
-  --color-ink-800: #111a2c;
-  --color-brand-50: #ecfeff;
-  --color-brand-200: #a5f3fc;
-  --color-brand-300: #67e8f9;
-  --color-brand-400: #22d3ee;
-  --color-brand-500: #06b6d4;
-  --color-brand-900: #164e63;
-  --color-brand-950: #083344;
-  --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  --color-ink-950: #05080e;
+  --color-ink-900: #0a0f18;
+  --color-ink-850: #0f1622;
+  --color-ink-800: #151d2b;
+  --color-ink-700: #1f2937;
+  --color-ink-600: #2b3648;
+  --color-brand-50: #eef3ff;
+  --color-brand-100: #dbe5ff;
+  --color-brand-200: #bccdff;
+  --color-brand-300: #93aaff;
+  --color-brand-400: #6b8bff;
+  --color-brand-500: #3d6bff;
+  --color-brand-600: #2a4fe0;
+  --color-brand-700: #1f3bb0;
+  --color-brand-900: #16255c;
+  --color-brand-950: #0d1433;
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", "JetBrains Mono", Consolas,
+    "Liberation Mono", monospace;
+  --radius-card: 1.25rem;
+  --radius-sheet: 2rem;
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.4), 0 12px 32px -20px rgb(0 0 0 / 0.9);
+  --shadow-float: 0 -8px 48px -12px rgb(0 0 0 / 0.85);
+  --shadow-accent: 0 10px 30px -12px rgb(61 107 255 / 0.85);
 }
 
-:root {
-  color: #e2e8f0;
-  background: #070b14;
-  font-family: var(--font-sans);
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  -webkit-tap-highlight-color: transparent;
+@layer base {
+  :root {
+    color-scheme: dark;
+    color: #e2e8f0;
+    background-color: var(--color-ink-950);
+    font-family: var(--font-sans);
+    font-synthesis: none;
+    font-feature-settings: "cv11" 1, "ss01" 1;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  html {
+    min-width: 320px;
+    min-height: 100%;
+    background-color: var(--color-ink-950);
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    min-width: 320px;
+    min-height: 100vh;
+    min-height: 100dvh;
+    margin: 0;
+    overflow-x: hidden;
+    overscroll-behavior-y: none;
+  }
+
+  button,
+  a,
+  input,
+  select,
+  textarea,
+  [role="button"] {
+    touch-action: manipulation;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+  }
+
+  :where(a, button, [role="button"], summary):focus-visible {
+    outline: 2px solid var(--color-brand-300);
+    outline-offset: 2px;
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--color-slate-500);
+  }
+
+  ::selection {
+    background: rgb(107 139 255 / 0.32);
+    color: #ffffff;
+  }
 }
 
-html {
-  min-width: 320px;
-  min-height: 100%;
-  background: #070b14;
+@layer components {
+  .app-canvas {
+    background-color: var(--color-ink-950);
+    background-image: radial-gradient(
+      56rem 26rem at 50% -14rem,
+      rgb(61 107 255 / 0.12),
+      transparent 70%
+    );
+    background-repeat: no-repeat;
+  }
+
+  .screen-fill {
+    height: 100vh;
+    height: 100dvh;
+  }
+
+  .screen-scroll {
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .no-scrollbar {
+    scrollbar-width: none;
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .search-input::-webkit-search-cancel-button,
+  .search-input::-webkit-search-decoration {
+    -webkit-appearance: none;
+    appearance: none;
+  }
 }
 
-body {
-  min-width: 320px;
-  min-height: 100dvh;
-  margin: 0;
-  overflow-x: hidden;
+@keyframes map-route-dash {
+  to {
+    stroke-dashoffset: -24;
+  }
 }
 
-button,
-a,
-input {
-  touch-action: manipulation;
+@keyframes map-marker-pulse {
+  0% {
+    transform: scale(0.7);
+    opacity: 0.85;
+  }
+  70% {
+    transform: scale(1.35);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1.35);
+    opacity: 0;
+  }
 }
 
-button,
-input {
-  font: inherit;
-}
+@layer components {
+  .map-route-flow {
+    stroke-dasharray: 14 10;
+    animation: map-route-dash 1.4s linear infinite;
+  }
 
-::selection {
-  background: rgb(34 211 238 / 30%);
-  color: #ffffff;
+  .map-pulse {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: map-marker-pulse 2s ease-out infinite;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

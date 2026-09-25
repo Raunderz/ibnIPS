@@ -1,3 +1,5 @@
+import { clearAuthSession } from '../services/authSession.js'
+
 const MISSING_BASE_URL_CODE = 'missing_api_base_url'
 const DEV_PROXY_PREFIX = '/__ibnips'
 
@@ -103,6 +105,10 @@ export async function apiRequest(path, options = {}) {
   }
 
   const payload = await readPayload(response)
+
+  if (response.status === 401) {
+    clearAuthSession('unauthorized')
+  }
 
   if (!response.ok) {
     throw createResponseError(response, payload)

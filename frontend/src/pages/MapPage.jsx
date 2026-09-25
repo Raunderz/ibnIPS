@@ -1,65 +1,268 @@
-import { ArrowLeft, Layers3, Route } from 'lucide-react'
-import { Link } from 'react-router-dom'
+import { MapPinned, Search, ServerOff } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import EmptyState from '../components/EmptyState.jsx'
+import FloorSelector from '../components/FloorSelector.jsx'
+import IconButton from '../components/IconButton.jsx'
+import MapBottomSheet from '../components/MapBottomSheet.jsx'
+import MapCanvas from '../components/MapCanvas.jsx'
+import MapFloatingControls from '../components/MapFloatingControls.jsx'
+import { useLocationCatalog } from '../hooks/useLocationCatalog.js'
+import { useMapRoute } from '../hooks/useMapRoute.js'
+import { useRecentDestinations } from '../hooks/useRecentDestinations.js'
+import {
+  getConnectedLinks,
+  getFloorCounts,
+  getFloorNodes,
+  getFloors,
+} from '../map/mapGraph.js'
+import { getMapViewState } from '../map/mapViewState.js'
+import {
+  getFloorCountLabel,
+  getFloorLabel,
+  getLocationCountLabel,
+} from '../utils/location.js'
 
-const readyContracts = [
-  'Nodes with node_id, name, floor, x, and y',
-  'Directed edges with steps and compass direction',
-  'Optional fingerprints grouped by node_id',
-]
+const EMPTY_NODES = []
+const EMPTY_EDGES = []
+
+const LEGEND = {
+  start: { label: 'Starting point', color: '#34d399' },
+  current: { label: 'Current location', color: '#38bdf8' },
+  destination: { label: 'Destination', color: '#fbbf24' },
+  route: { label: 'Walking route', color: '#6b8bff' },
+}
 
 export default function MapPage() {
+  const [searchParams, setSearchParams] = useSearchParams()
+  const navigate = useNavigate()
+  const selectedId = searchParams.get('node')
+  const startId = searchParams.get('from')
+  const catalogQuery = useLocationCatalog()
+  const { record } = useRecentDestinations()
+  const [floorChoice, setFloorChoice] = useState(null)
+  const mapRef = useRef(null)
+
+  const catalog = catalogQuery.data
+  const nodes = useMemo(() => catalog?.nodes ?? EMPTY_NODES, [catalog])
+  const edges = useMemo(() => catalog?.edges ?? EMPTY_EDGES, [catalog])
+  const fingerprintCounts = catalog?.fingerprintCounts ?? {}
+  const floors = useMemo(() => getFloors(nodes), [nodes])
+  const floorCounts = useMemo(() => getFloorCounts(nodes), [nodes])
+  const nodesById = useMemo(
+    () => new Map(nodes.map((node) => [node.nodeId, node])),
+    [nodes],
+  )
+
+  const selectedNode = selectedId ? (nodesById.get(selectedId) ?? null) : null
+  const startNode = startId ? (nodesById.get(startId) ?? null) : null
+  const activeFloor = selectedNode?.floor ?? startNode?.floor ?? floorChoice ?? floors[0] ?? null
+
+  const { route, routeFloors } = useMapRoute(nodes, edges, startId, selectedId)
+  const links = useMemo(
+    () => (selectedNode ? getConnectedLinks(edges, selectedNode.nodeId) : []),
+    [edges, selectedNode],
+  )
+
+  const displayFloor = route
+    ? (routeFloors.includes(activeFloor) ? activeFloor : routeFloors[0])
+    : activeFloor
+  const displayNodes = useMemo(
+    () => getFloorNodes(nodes, displayFloor),
+    [nodes, displayFloor],
+  )
+
+  const viewState = getMapViewState({
+    isPending: catalogQuery.isPending,
+    isError: catalogQuery.isError,
+    nodeCount: nodes.length,
+  })
+
+  useEffect(() => {
+    if (selectedNode) {
+      record(selectedNode)
+    }
+  }, [selectedNode, record])
+
+  const updateParams = useCallback(
+    (changes) => {
+      const next = new URLSearchParams(searchParams)
+
+      for (const [key, value] of Object.entries(changes)) {
+        if (value) {
+          next.set(key, value)
+        } else {
+          next.delete(key)
+        }
+      }
+
+      setSearchParams(next, { replace: true })
+    },
+    [searchParams, setSearchParams],
+  )
+
+  const selectNode = useCallback(
+    (node) => {
+      updateParams({ node: node ? node.nodeId : null })
+    },
+    [updateParams],
+  )
+
+  const legendItems = useMemo(() => {
+    const items = []
+
+    if (route) {
+      items.push(LEGEND.route)
+    }
+
+    if (startNode) {
+      items.push(LEGEND.start)
+    }
+
+    if (selectedNode) {
+      items.push(LEGEND.destination)
+    }
+
+    return items
+  }, [route, startNode, selectedNode])
+
   return (
-    <div className="space-y-6">
-      <Link
-        to="/"
-        className="inline-flex min-h-12 items-center gap-2 rounded-2xl pr-3 text-sm font-semibold text-slate-300 active:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-400"
-      >
-        <ArrowLeft size={19} aria-hidden="true" />
-        Home
-      </Link>
+    <div className="app-canvas screen-fill flex flex-col overflow-hidden text-slate-100">
+      <div className="shrink-0 space-y-2 px-3 pt-[max(0.5rem,env(safe-area-inset-top))] pb-2">
+        <div className="flex items-center gap-2">
+          <IconButton label="Back to home" to="/">
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              aria-hidden="true"
+            >
+              <path
+                d="M15 5l-7 7 7 7"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </IconButton>
+          <Link
+            to="/search"
+            className="flex min-h-11 flex-1 items-center gap-2 rounded-2xl border border-white/10 bg-ink-850/90 px-3.5 text-sm text-slate-400 backdrop-blur transition-colors duration-150 active:bg-ink-800"
+          >
+            <Search size={17} aria-hidden="true" />
+            Search campus locations
+          </Link>
+        </div>
 
-      <section className="rounded-[2rem] border border-white/8 bg-gradient-to-b from-brand-500/10 to-transparent p-5 sm:p-8">
-        <p className="inline-flex min-h-8 items-center rounded-full border border-amber-400/25 bg-amber-400/10 px-3 text-xs font-bold uppercase tracking-[0.16em] text-amber-200">
-          Planned interface
-        </p>
-        <h1 className="mt-5 text-3xl font-black tracking-[-0.03em] text-white sm:text-4xl">
-          Indoor map
-        </h1>
-        <p className="mt-3 max-w-2xl text-base leading-7 text-slate-300">
-          The map view is not enabled in this foundation phase. The client can
-          already validate the real map payload without inventing campus data.
-        </p>
-      </section>
+        <FloorSelector
+          floors={floors}
+          counts={floorCounts}
+          activeFloor={activeFloor}
+          onChange={(floor) => {
+            setFloorChoice(floor)
+            updateParams({ node: null })
+          }}
+        />
+      </div>
 
-      <section className="grid gap-4 sm:grid-cols-2">
-        <article className="rounded-3xl border border-white/8 bg-white/4 p-5">
-          <span className="grid size-11 place-items-center rounded-2xl bg-brand-400/12 text-brand-300">
-            <Layers3 size={21} aria-hidden="true" />
-          </span>
-          <h2 className="mt-4 font-bold text-white">Map contract ready</h2>
-          <ul className="mt-3 space-y-2 text-sm leading-6 text-slate-400">
-            {readyContracts.map((item) => (
-              <li key={item} className="flex gap-2">
-                <span aria-hidden="true" className="text-brand-400">
-                  •
-                </span>
-                {item}
-              </li>
-            ))}
-          </ul>
-        </article>
+      <div className="relative min-h-0 flex-1">
+        {viewState === 'loading' ? (
+          <div className="absolute inset-0 animate-pulse bg-ink-850" />
+        ) : viewState === 'error' ? (
+          <div className="screen-scroll absolute inset-0 px-3 pt-6">
+            <EmptyState
+              icon={ServerOff}
+              tone="danger"
+              title="Map unavailable"
+              description={catalogQuery.error.message}
+              action={
+                <button
+                  type="button"
+                  onClick={() => catalogQuery.refetch()}
+                  className="inline-flex min-h-11 items-center rounded-2xl border border-white/12 bg-white/5 px-4 text-sm font-semibold text-white active:bg-white/10"
+                >
+                  Try again
+                </button>
+              }
+            />
+          </div>
+        ) : viewState === 'empty' ? (
+          <div className="screen-scroll absolute inset-0 px-3 pt-6">
+            <EmptyState
+              icon={MapPinned}
+              title="No campus map published"
+              description="The backend returned no nodes or map edges yet, so there is nothing to draw."
+              action={
+                <Link
+                  to="/search"
+                  className="inline-flex min-h-11 items-center rounded-2xl border border-white/12 bg-white/5 px-4 text-sm font-semibold text-white active:bg-white/10"
+                >
+                  Go to search
+                </Link>
+              }
+            />
+          </div>
+        ) : (
+          <>
+            <MapCanvas
+              ref={mapRef}
+              nodes={displayNodes}
+              edges={edges}
+              selectedNodeId={selectedId}
+              startNodeId={startId}
+              currentNodeId={null}
+              route={route}
+              onSelectNode={selectNode}
+              caption={`${getFloorLabel(displayFloor)} · ${getLocationCountLabel(
+                displayNodes.length,
+              )}`}
+              legendItems={legendItems}
+              emptyMessage="No locations on this floor yet."
+              className="h-full w-full rounded-none border-0"
+            />
 
-        <article className="rounded-3xl border border-white/8 bg-white/4 p-5">
-          <span className="grid size-11 place-items-center rounded-2xl bg-amber-400/12 text-amber-300">
-            <Route size={21} aria-hidden="true" />
-          </span>
-          <h2 className="mt-4 font-bold text-white">Navigation is client-side</h2>
-          <p className="mt-3 text-sm leading-6 text-slate-400">
-            The backend has no routing or position endpoint. Pathfinding and
-            localization must live in this client when those phases begin.
+            <MapFloatingControls
+              onZoomIn={() => mapRef.current?.zoomIn()}
+              onZoomOut={() => mapRef.current?.zoomOut()}
+              onFit={() => mapRef.current?.reset()}
+              onRecenter={() => mapRef.current?.focusNode(selectedId)}
+              canRecenter={Boolean(selectedId)}
+            />
+
+            <MapBottomSheet
+              node={selectedNode}
+              startNode={startNode}
+              route={route}
+              routeFloors={routeFloors}
+              linkCount={links.length}
+              fingerprintCount={fingerprintCounts[selectedId] ?? 0}
+              canStartFromSelection={Boolean(startNode && selectedId !== startId)}
+              onSetStart={(node) => updateParams({ from: node.nodeId })}
+              onClearStart={() => updateParams({ from: null })}
+              onStartNavigation={() =>
+                navigate(
+                  `/navigate?node=${encodeURIComponent(
+                    selectedId,
+                  )}&from=${encodeURIComponent(startId ?? '')}`,
+                )
+              }
+              onClearSelection={() => selectNode(null)}
+            />
+          </>
+        )}
+
+        {viewState === 'ready' ? (
+          <p className="pointer-events-none absolute top-2 right-14 rounded-lg border border-white/10 bg-ink-950/80 px-2 py-1 text-[0.65rem] font-medium text-slate-400 backdrop-blur">
+            {route
+              ? `${route.totalSteps} steps · ${route.segments.length} moves`
+              : floors.length > 1
+                ? `${getFloorCountLabel(floors.length)} · pinch to zoom`
+                : 'Pinch to zoom · drag to pan'}
           </p>
-        </article>
-      </section>
+        ) : null}
+      </div>
     </div>
   )
 }

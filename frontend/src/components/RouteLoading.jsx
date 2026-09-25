@@ -3,11 +3,17 @@ import { LoaderCircle } from 'lucide-react'
 export default function RouteLoading() {
   return (
     <div
-      className="grid min-h-[60dvh] place-items-center text-brand-300"
+      className="app-canvas grid min-h-dvh place-items-center px-6 text-brand-300"
       role="status"
-      aria-label="Loading page"
+      aria-live="polite"
+      aria-label="Loading"
     >
-      <LoaderCircle size={28} className="animate-spin" aria-hidden="true" />
+      <div className="flex flex-col items-center gap-3">
+        <LoaderCircle size={26} className="animate-spin" aria-hidden="true" />
+        <p className="text-xs font-semibold tracking-wide text-slate-500 uppercase">
+          Loading
+        </p>
+      </div>
     </div>
   )
 }

@@ -1,11 +1,16 @@
-import { useCallback, useSyncExternalStore } from 'react'
+import { useSyncExternalStore } from 'react'
 import {
   clearAuthSession,
   getAuthSession,
+  getAuthSessionEndReason,
   subscribeToAuthSession,
 } from '../services/authSession.js'
 
-function getServerSnapshot() {
+function getServerSession() {
+  return null
+}
+
+function getServerEndReason() {
   return null
 }
 
@@ -13,15 +18,18 @@ export function useAuthSession() {
   const session = useSyncExternalStore(
     subscribeToAuthSession,
     getAuthSession,
-    getServerSnapshot,
+    getServerSession,
   )
-  const signOut = useCallback(() => {
-    clearAuthSession()
-  }, [])
+  const endReason = useSyncExternalStore(
+    subscribeToAuthSession,
+    getAuthSessionEndReason,
+    getServerEndReason,
+  )
 
   return {
     session,
+    endReason,
     isAuthenticated: Boolean(session),
-    signOut,
+    signOut: clearAuthSession,
   }
 }
