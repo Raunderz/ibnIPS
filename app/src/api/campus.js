@@ -2,26 +2,6 @@ import { apiRequest } from './client.js'
 import { API_ENDPOINTS } from './endpoints.js'
 import { sortNodes } from '../map/mapGraph.js'
 import { parseMapResponse, parseNodeList } from '../map/mapContract.js'
-import { isPositioned } from '../map/mapGraph.js'
-
-function assignPositions(nodes) {
-  const unpositioned = nodes.filter((node) => !isPositioned(node))
-  if (unpositioned.length === 0) return nodes
-
-  const cols = Math.ceil(Math.sqrt(unpositioned.length))
-  const spacing = 160
-  let index = 0
-
-  for (const node of unpositioned) {
-    const col = index % cols
-    const row = Math.floor(index / cols)
-    node.x = col * spacing + 80
-    node.y = row * spacing + 80
-    index++
-  }
-
-  return nodes
-}
 
 export async function getBackendHealth(signal) {
   const payload = await apiRequest(API_ENDPOINTS.health, { signal })
@@ -43,6 +23,23 @@ export async function getMap(signal) {
   return parseMapResponse(payload)
 }
 
+function countFingerprints(fingerprints) {
+  const counts = {}
+
+  for (const [nodeId, readings] of Object.entries(fingerprints)) {
+    counts[nodeId] = readings.length
+  }
+
+  return counts
+}
+
+/**
+ * Merges `/api/nodes` and `/api/map` into a single catalog.
+ *
+ * The nodes table is frequently empty on a fresh backend while `map.json`
+ * already carries the graph, so map data wins and the database only fills gaps.
+ * A failure in one endpoint degrades to `isPartial` instead of breaking the app.
+ */
 export async function getCampusCatalog(signal) {
   const [nodesResult, mapResult] = await Promise.allSettled([
     getNodes(signal),
@@ -67,24 +64,14 @@ export async function getCampusCatalog(signal) {
     }
   }
 
-  const nodes = sortNodes([...nodesById.values()])
-  assignPositions(nodes)
+  const fingerprints = map ? map.fingerprints : {}
 
   return {
-    nodes,
+    nodes: sortNodes([...nodesById.values()]),
     edges: map ? map.edges : [],
-    fingerprintCounts: getFingerprintCounts(map),
+    fingerprints,
+    fingerprintCounts: countFingerprints(fingerprints),
     isPartial:
       nodesResult.status === 'rejected' || mapResult.status === 'rejected',
   }
-}
-
-function getFingerprintCounts(map) {
-  const counts = {}
-
-  for (const [nodeId, readings] of map?.fingerprints ?? []) {
-    counts[nodeId] = readings.length
-  }
-
-  return counts
 }

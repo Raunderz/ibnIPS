@@ -1,0 +1,20 @@
+{
+  "name": "frontend_ibn",
+  "version": "1.0.0",
+  "description": "**I Better Navigate** — Indoor Positioning System.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Raunderz/ibnIPS.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Raunderz/ibnIPS/issues"
+  },
+  "homepage": "https://github.com/Raunderz/ibnIPS#readme"
+}
