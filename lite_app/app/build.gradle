@@ -1,0 +1,42 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.example.ibnips'
+    compileSdk 34
+    buildToolsVersion "35.0.0"
+
+    defaultConfig {
+        applicationId "com.example.ibnips"
+        minSdk 26
+        targetSdk 34
+        versionCode 1
+        versionName "1.0"
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+        debug {
+            minifyEnabled false
+        }
+    }
+
+    // No ViewBinding, DataBinding, or other extras needed
+    buildFeatures {
+        buildConfig true
+    }
+}
+
+// No external dependencies — only framework + org.json (bundled with Android)
+dependencies {
+}

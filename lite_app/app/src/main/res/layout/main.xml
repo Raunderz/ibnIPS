@@ -1,0 +1,146 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Root: FrameLayout so the overlay panel sits on top of the full-screen MapView.
+  The MapView fills the entire screen; the overlay panel is anchored to the bottom.
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#FAFAFA">
+
+    <!-- Full-screen map canvas -->
+    <com.example.ibnips.MapView
+        android:id="@+id/mapView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <!-- Bottom control overlay -->
+    <LinearLayout
+        android:id="@+id/controlOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="180dp"
+        android:layout_gravity="bottom"
+        android:background="@drawable/panel_bottom"
+        android:elevation="8dp"
+        android:orientation="horizontal"
+        android:padding="12dp">
+
+        <!-- Left column: action buttons -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center_vertical">
+
+            <Button
+                android:id="@+id/btnScan"
+                android:layout_width="match_parent"
+                android:layout_height="38dp"
+                android:layout_marginBottom="3dp"
+                android:background="@drawable/btn_scan"
+                android:drawableStart="@drawable/ic_scan"
+                android:drawablePadding="6dp"
+                android:paddingStart="12dp"
+                android:paddingEnd="12dp"
+                android:text="Scan"
+                android:textColor="#FFFFFF"
+                android:textSize="13sp"
+                android:textAllCaps="false" />
+
+            <Button
+                android:id="@+id/btnPing"
+                android:layout_width="match_parent"
+                android:layout_height="38dp"
+                android:layout_marginBottom="3dp"
+                android:background="@drawable/btn_ping"
+                android:drawableStart="@drawable/ic_ping"
+                android:drawablePadding="6dp"
+                android:paddingStart="12dp"
+                android:paddingEnd="12dp"
+                android:text="Ping"
+                android:textColor="#FFFFFF"
+                android:textSize="13sp"
+                android:textAllCaps="false" />
+
+            <Button
+                android:id="@+id/btnFetchMap"
+                android:layout_width="match_parent"
+                android:layout_height="38dp"
+                android:layout_marginBottom="3dp"
+                android:background="@drawable/btn_fetch_map"
+                android:drawableStart="@drawable/ic_map"
+                android:drawablePadding="6dp"
+                android:paddingStart="12dp"
+                android:paddingEnd="12dp"
+                android:text="Fetch Map"
+                android:textColor="#FFFFFF"
+                android:textSize="13sp"
+                android:textAllCaps="false" />
+
+            <Button
+                android:id="@+id/btnLocateMe"
+                android:layout_width="match_parent"
+                android:layout_height="38dp"
+                android:background="@drawable/btn_locate_me"
+                android:drawableStart="@drawable/ic_locate"
+                android:drawablePadding="6dp"
+                android:paddingStart="12dp"
+                android:paddingEnd="12dp"
+                android:text="Locate Me"
+                android:textColor="#FFFFFF"
+                android:textSize="13sp"
+                android:textAllCaps="false" />
+
+        </LinearLayout>
+
+        <!-- 8dp spacer between columns -->
+        <View
+            android:layout_width="8dp"
+            android:layout_height="match_parent" />
+
+        <!-- Right column: status + room name + floor -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center_vertical">
+
+            <TextView
+                android:id="@+id/statusText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="6dp"
+                android:text="Status: —"
+                android:textColor="#212121"
+                android:textSize="13sp"
+                android:maxLines="3"
+                android:ellipsize="end" />
+
+            <EditText
+                android:id="@+id/roomNameInput"
+                android:layout_width="match_parent"
+                android:layout_height="38dp"
+                android:layout_marginBottom="4dp"
+                android:background="@drawable/edittext_rounded_background"
+                android:hint="Room name"
+                android:textSize="13sp"
+                android:inputType="text"
+                android:singleLine="true"
+                android:imeOptions="actionDone"
+                android:padding="8dp" />
+
+            <Spinner
+                android:id="@+id/floorSpinner"
+                android:layout_width="match_parent"
+                android:layout_height="38dp"
+                android:background="@drawable/spinner_rounded_background"
+                android:textSize="13sp"
+                android:padding="8dp" />
+
+        </LinearLayout>
+
+    </LinearLayout>
+
+</FrameLayout>

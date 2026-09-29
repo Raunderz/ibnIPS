@@ -1,0 +1,23 @@
+# Built outputs
+/build/
+app/build/
+
+# Gradle internals
+.gradle/
+gradle/wrapper/gradle-wrapper.jar
+
+# Local config — never commit, contains SDK path
+local.properties
+
+# Android Studio / IntelliJ
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Agent call logs — sensitive, dataset only
+~/.agents/agent-calls.csv

@@ -1,15 +1,60 @@
+# Gradle
+.gradle/
+**/.gradle/
+build/
+**/build/
+
+# Android
 *.iml
-.gradle
-/local.properties
-/.idea/caches
-/.idea/libraries
-/.idea/modules.xml
-/.idea/workspace.xml
-/.idea/navEditor.xml
-/.idea/assetWizardSettings.xml
-.DS_Store
-/build
-/captures
-.externalNativeBuild
-.cxx
+*.apk
+*.aab
 local.properties
+captures/
+.cxx/
+.externalNativeBuild/
+**/generated/
+**/intermediates/
+**/tmp/
+
+# Android Studio / IntelliJ
+.idea/
+.kotlin/
+
+# Node
+node_modules/
+
+# Expo
+.expo/
+
+# macOS
+.DS_Store
+
+# Logs
+*.log
+
+# VS Code
+.vscode/
+
+# Signing / secrets
+*.keystore
+*.jks
+.env
+.env.*
+
+# Backend generated/local data
+backend/icps.db
+backend/map.json
+backend/.env
+
+# Build output
+/.build-output
+
+# Test coverage
+app/coverage/
+
+# Diagnostic / machine-specific files
+diag_report.txt
+diagnose_result.txt
+sdk_inspection.txt
+sdk_report.txt
+sdk_status_report.txt

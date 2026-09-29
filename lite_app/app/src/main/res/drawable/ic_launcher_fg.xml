@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Foreground vector for the adaptive launcher icon -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- White "i" dot -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M50,30 h8 v8 h-8 z" />
+    <!-- White "i" stem -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M50,44 h8 v34 h-8 z" />
+
+</vector>

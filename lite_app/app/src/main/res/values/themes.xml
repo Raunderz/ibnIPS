@@ -1,0 +1,10 @@
+<resources>
+  <style name="Theme.ibnIPS" parent="android:Theme.Material.Light.NoActionBar">
+    <item name="android:colorPrimary">#1565C0</item>
+    <item name="android:colorPrimaryDark">#0D47A1</item>
+    <item name="android:colorAccent">#7B1FA2</item>
+    <item name="android:windowBackground">@color/window_bg</item>
+    <item name="android:statusBarColor">#0D47A1</item>
+    <item name="android:windowLightStatusBar">false</item>
+  </style>
+</resources>

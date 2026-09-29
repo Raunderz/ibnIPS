@@ -1,0 +1,10 @@
+build/
+.git
+.github
+.gitignore
+*.beam
+*.ez
+erl_crash.dump
+*.db
+map.json
+.env
