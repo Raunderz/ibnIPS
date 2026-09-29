@@ -3,19 +3,45 @@ package com.ibnips.app.ui.viewmodel
 import androidx.compose.runtime.State
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import com.ibnips.app.data.model.*
+import com.ibnips.app.data.network.CampusNetworkAdapter
 import com.ibnips.app.data.repository.CampusRepository
 import com.ibnips.app.domain.navigation.NavigationGraph
+import kotlinx.coroutines.launch
 import java.util.Calendar
 import java.util.Locale
 
-class CampusViewModel(private val repository: CampusRepository = CampusRepository()) : ViewModel() {
+class CampusViewModel(
+    private val repository: CampusRepository,
+    private val networkAdapter: CampusNetworkAdapter? = null
+) : ViewModel() {
 
     private val _blocks = mutableStateOf(repository.getBlocks())
     val blocks: State<List<CampusBlock>> = _blocks
 
     private val _searchResults = mutableStateOf<List<SearchResult>>(emptyList())
     val searchResults: State<List<SearchResult>> = _searchResults
+
+    private val _isSyncing = mutableStateOf(false)
+    val isSyncing: State<Boolean> = _isSyncing
+
+    init {
+        // Initial sync from backend if available
+        syncWithBackend()
+    }
+
+    fun syncWithBackend() {
+        networkAdapter ?: return
+        viewModelScope.launch {
+            _isSyncing.value = true
+            val success = networkAdapter.syncNodesAndMap()
+            if (success) {
+                refreshBlocks()
+            }
+            _isSyncing.value = false
+        }
+    }
 
     fun getFloors(blockId: String): List<CampusFloor> {
         return repository.getFloors(blockId)
@@ -47,22 +73,18 @@ class CampusViewModel(private val repository: CampusRepository = CampusRepositor
         
         val results = mutableListOf<SearchResult>()
         
-        // Search Rooms
         repository.searchRooms(query).forEach { room ->
             results.add(SearchResult.RoomResult(room))
         }
         
-        // Search Sections
         repository.searchSections(query).forEach { section ->
             results.add(SearchResult.SectionResult(section))
         }
         
-        // Search Subjects (Class Schedules)
         repository.searchSubjects(query).forEach { schedule ->
             results.add(SearchResult.SubjectResult(schedule))
         }
         
-        // Search Facilities
         repository.getAllFacilities().filter { 
             it.name.contains(query, ignoreCase = true) 
         }.forEach { facility ->
@@ -70,15 +92,6 @@ class CampusViewModel(private val repository: CampusRepository = CampusRepositor
         }
         
         _searchResults.value = results
-    }
-
-    // Admin Calibration helpers
-    fun getMappedLocationsCount(blockId: String, floorId: String): Int {
-        return repository.getMappedLocationsCount(blockId, floorId)
-    }
-
-    fun getCalibrationPoints(blockId: String, floorId: String): List<CalibrationPoint> {
-        return repository.getCalibrationPoints(blockId, floorId)
     }
 
     fun isRoomExists(blockId: String, floorId: String, roomNumber: String): Boolean {
@@ -138,7 +151,6 @@ class CampusViewModel(private val repository: CampusRepository = CampusRepositor
         repository.deleteCalibrationPoint(id)
     }
 
-    // Navigation methods
     fun addNavigationNode(node: NavigationNode) {
         repository.addNavigationNode(node)
     }
@@ -172,7 +184,6 @@ class CampusViewModel(private val repository: CampusRepository = CampusRepositor
         )
     }
 
-    // Wi-Fi Fingerprint methods
     fun saveWifiFingerprint(fingerprint: WifiFingerprint) {
         repository.saveWifiFingerprint(fingerprint)
         refreshBlocks()
@@ -199,8 +210,6 @@ class CampusViewModel(private val repository: CampusRepository = CampusRepositor
         _blocks.value = repository.getBlocks().toList()
     }
 
-    // Phase 10 Enhancement Methods
-    
     fun getSection(id: String): Section? = repository.getSection(id)
     
     fun getRoomsForSection(section: Section): List<Room> {
@@ -227,6 +236,14 @@ class CampusViewModel(private val repository: CampusRepository = CampusRepositor
             timestamp = System.currentTimeMillis()
         )
         repository.addFeedback(feedback)
+    }
+    
+    fun getMappedLocationsCount(blockId: String, floorId: String): Int {
+        return repository.getMappedLocationsCount(blockId, floorId)
+    }
+
+    fun getCalibrationPoints(blockId: String, floorId: String): List<CalibrationPoint> {
+        return repository.getCalibrationPoints(blockId, floorId)
     }
 }
 
