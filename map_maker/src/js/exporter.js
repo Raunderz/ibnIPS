@@ -1,7 +1,14 @@
 import { COMPASS } from './geometry.js';
 
 export class Exporter {
-  buildMap(nodes, edges) {
+  /**
+   * Build the map.json document the backend serves.
+   *
+   * `fingerprints` is passed through as loaded. The map editor does not place
+   * or edit Wi-Fi readings — it only carries them from the database into the
+   * export, so that a map built here keeps its positioning data.
+   */
+  buildMap(nodes, edges, fingerprints = {}) {
     return {
       nodes: nodes.map(n => ({
         node_id: n.id,
@@ -15,7 +22,8 @@ export class Exporter {
         to_node: e.to,
         steps: Math.max(1, Math.round(e.steps || 1)),
         direction: COMPASS.includes(e.direction) ? e.direction : ''
-      }))
+      })),
+      fingerprints
     };
   }
 
@@ -45,7 +53,7 @@ export class Exporter {
     return warnings;
   }
 
-  exportJson(nodes, edges) {
+  exportJson(nodes, edges, fingerprints = {}) {
     const warnings = this.validate(nodes, edges);
     if (warnings.length) {
       const ok = window.confirm(
@@ -53,7 +61,20 @@ export class Exporter {
       );
       if (!ok) return;
     }
-    this.download('map.json', this.buildMap(nodes, edges));
+
+    // Say so when the export would carry no positioning data. Not fatal — the
+    // map is still valid — but easy to miss, and easy to fix by loading a
+    // database that has readings in it.
+    const readingCount = Object.values(fingerprints)
+      .reduce((total, list) => total + (list ? list.length : 0), 0);
+    if (readingCount === 0) {
+      console.warn(
+        'Exporting with no Wi-Fi readings. Load a database first if you want ' +
+        'fingerprint data in map.json.'
+      );
+    }
+
+    this.download('map.json', this.buildMap(nodes, edges, fingerprints));
   }
 
   saveProject(nodes, edges, meta = {}) {

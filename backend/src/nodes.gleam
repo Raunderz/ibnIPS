@@ -1,18 +1,15 @@
 // nodes.gleam
 // GET /api/nodes — list all rooms for a selector / dropdown.
 
+import db
 import db_query
 import gleam/dynamic/decode
 import gleam/json
 import models.{type Node, Node, encode_node}
-import sqlight
 import wisp
 
 /// Handle GET /api/nodes. Returns a JSON array of all nodes.
-pub fn handle(
-  _request: wisp.Request,
-  conn: sqlight.Connection,
-) -> wisp.Response {
+pub fn handle(_request: wisp.Request, conn: db.Connection) -> wisp.Response {
   case get_all_nodes(conn) {
     Error(msg) -> {
       let error_json =
@@ -29,7 +26,7 @@ pub fn handle(
 }
 
 /// Fetch all nodes, sorted by name.
-fn get_all_nodes(conn: sqlight.Connection) -> Result(List(Node), String) {
+fn get_all_nodes(conn: db.Connection) -> Result(List(Node), String) {
   let sql = "SELECT node_id, name, floor, x, y FROM nodes ORDER BY name"
   db_query.query_as_maps(sql, on: conn, with: [], expecting: node_row_decoder())
 }

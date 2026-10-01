@@ -1,11 +1,11 @@
 // map.gleam
 // GET /api/map — full graph (nodes + edges) from MAP_JSON_URL or map.json.
 
+import db
 import env
 import gleam/io
 import gleam/json
 import models
-import sqlight
 import wisp
 
 @external(erlang, "file_ffi", "read_file")
@@ -16,10 +16,7 @@ fn fetch_url(url: String) -> Result(String, String)
 
 /// Handle GET /api/map.
 /// Uses MAP_JSON_URL (.env / env) when set; otherwise reads local map.json.
-pub fn handle(
-  _request: wisp.Request,
-  _conn: sqlight.Connection,
-) -> wisp.Response {
+pub fn handle(_request: wisp.Request, _conn: db.Connection) -> wisp.Response {
   case env.map_json_url() {
     Ok(url) -> load_from_url(url)
     Error(_) -> load_from_file()

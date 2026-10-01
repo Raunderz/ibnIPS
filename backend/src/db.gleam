@@ -1,8 +1,19 @@
+import database
 import db_query
 import env
 import gleam/dynamic/decode
+import gleam/list
 import gleam/result
 import sqlight
+
+/// Re-exported so callers only need to import db.
+pub type Connection =
+  database.Connection
+
+/// Re-exported so callers only need to import db.
+pub fn is_turso(conn: Connection) -> Bool {
+  database.is_turso(conn)
+}
 
 /// Open the SQLite database with the pragmas the app depends on.
 ///
@@ -11,42 +22,66 @@ import sqlight
 /// `FOREIGN KEY` constraints declared in the schema are silently ignored, so
 /// `edges` can reference nodes that do not exist. `busy_timeout` makes a
 /// concurrent writer wait for the write lock instead of failing immediately.
-fn apply_pragmas(conn: sqlight.Connection) -> Result(Nil, sqlight.Error) {
-  use _ <- result.try(sqlight.exec("PRAGMA foreign_keys = ON;", conn))
-  use _ <- result.try(sqlight.exec("PRAGMA busy_timeout = 5000;", conn))
+///
+/// Local databases only — Turso applies its own settings.
+fn apply_pragmas(conn: Connection) -> Result(Nil, Nil) {
+  let handle = database.sqlite_ref(conn)
+  let pragma = fn(sql) {
+    case sqlight.exec(sql, handle) {
+      Ok(_) -> Ok(Nil)
+      Error(_) -> Error(Nil)
+    }
+  }
+  use _ <- result.try(pragma("PRAGMA foreign_keys = ON;"))
+  use _ <- result.try(pragma("PRAGMA busy_timeout = 5000;"))
   // Best effort: WAL needs filesystem shared-memory support, which is not
   // available on every network filesystem.
-  let _ = sqlight.exec("PRAGMA journal_mode = WAL;", conn)
+  let _ = sqlight.exec("PRAGMA journal_mode = WAL;", handle)
   Ok(Nil)
 }
 
-/// Open a connection to the configured database path, creating it if missing.
+/// Open a connection to the configured database.
+///
+/// Turso when `DATABASE_URL` and `DATABASE_TOKEN` are set, otherwise the local
+/// SQLite file at `DB_PATH`, created if missing.
 ///
 /// Migrations are *not* run — see `init` for the startup path and
 /// `with_connection` for request-scoped connections.
-pub fn open() -> Result(sqlight.Connection, sqlight.Error) {
-  case sqlight.open("file:" <> env.db_path() <> "?mode=rwc") {
-    Error(e) -> Error(e)
+pub fn open() -> Result(Connection, String) {
+  case env.turso_credentials() {
+    Ok(#(url, token)) ->
+      case database.open_remote(url, token) {
+        Ok(conn) -> Ok(conn)
+        Error(_) ->
+          Error("could not reach Turso — check DATABASE_URL and DATABASE_TOKEN")
+      }
+    Error(_) -> open_local()
+  }
+}
+
+fn open_local() -> Result(Connection, String) {
+  case database.open_local(env.db_path()) {
+    Error(_) -> Error("could not open the database at " <> env.db_path())
     Ok(conn) ->
       case apply_pragmas(conn) {
         Ok(Nil) -> Ok(conn)
-        Error(e) -> {
-          let _ = sqlight.close(conn)
-          Error(e)
+        Error(_) -> {
+          database.close(conn)
+          Error("could not configure the database")
         }
       }
   }
 }
 
-/// Open the SQLite database (creating it if missing) and run migrations.
-pub fn init() -> Result(sqlight.Connection, sqlight.Error) {
+/// Open the database (creating it if missing) and run migrations.
+pub fn init() -> Result(Connection, String) {
   case open() {
-    Error(e) -> Error(e)
+    Error(message) -> Error(message)
     Ok(conn) ->
       case run_migrations(conn) {
-        Error(e) -> {
-          let _ = sqlight.close(conn)
-          Error(e)
+        Error(_) -> {
+          database.close(conn)
+          Error("could not create the database tables")
         }
         Ok(Nil) -> Ok(conn)
       }
@@ -59,21 +94,19 @@ pub fn init() -> Result(sqlight.Connection, sqlight.Error) {
 /// cannot interleave with another request's transaction. Sharing one connection
 /// across all mist handler processes would let request B's `COMMIT` close
 /// request A's still-open transaction.
-pub fn with_connection(
-  fun: fn(sqlight.Connection) -> a,
-) -> Result(a, sqlight.Error) {
+pub fn with_connection(fun: fn(Connection) -> a) -> Result(a, String) {
   case open() {
-    Error(e) -> Error(e)
+    Error(message) -> Error(message)
     Ok(conn) -> {
       let result = fun(conn)
-      let _ = sqlight.close(conn)
+      database.close(conn)
       Ok(result)
     }
   }
 }
 
 /// Create all tables and indexes. Safe to run repeatedly (uses IF NOT EXISTS).
-fn run_migrations(conn: sqlight.Connection) -> Result(Nil, sqlight.Error) {
+fn run_migrations(conn: Connection) -> Result(Nil, Nil) {
   // nodes table: rooms / locations
   // x and y default to 0; set later by the backend.
   let nodes_sql =
@@ -130,14 +163,16 @@ CREATE TABLE IF NOT EXISTS room_aps(
 );
 "
 
-  // Indexes for faster lookups. room_aps is keyed on (node_id, bssid), so the
-  // primary key already covers lookups by node_id.
-  let indexes_sql =
-    "
-  CREATE INDEX IF NOT EXISTS idx_room_aps_bssid ON room_aps(bssid);
-  CREATE INDEX IF NOT EXISTS idx_edges_from ON edges(from_node);
-  CREATE INDEX IF NOT EXISTS idx_edges_to ON edges(to_node);
-  "
+  // Indexes, one statement each.
+  //
+  // These are separate statements on purpose: a local SQLite connection runs a
+  // string of statements separated by semicolons, but Turso's HTTP API runs
+  // exactly one per request, so a packed string fails there.
+  let index_sqls = [
+    "CREATE INDEX IF NOT EXISTS idx_room_aps_bssid ON room_aps(bssid)",
+    "CREATE INDEX IF NOT EXISTS idx_edges_from ON edges(from_node)",
+    "CREATE INDEX IF NOT EXISTS idx_edges_to ON edges(to_node)",
+  ]
 
   // --- NEW: users: one row per unique roll number ---
   // user_id is the roll number extracted from email (e.g., "23b1234").
@@ -168,15 +203,16 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 "
 
-  // Execute each migration in order.
-  // `use _ <- result.try(...)` means: if this fails, return the error immediately.
-  // If it succeeds, continue to the next line with the result bound to `_`.
-  use _ <- result.try(sqlight.exec(nodes_sql, conn))
-  use _ <- result.try(sqlight.exec(edges_sql, conn))
-  use _ <- result.try(sqlight.exec(room_aps_sql, conn))
-  use _ <- result.try(sqlight.exec(indexes_sql, conn))
-  use _ <- result.try(sqlight.exec(users_sql, conn))
-  use _ <- result.try(sqlight.exec(sessions_sql, conn))
+  // Execute each migration in order. `result.try` returns early on failure.
+  use _ <- result.try(db_query.exec_plain(nodes_sql, conn))
+  use _ <- result.try(db_query.exec_plain(room_aps_sql, conn))
+  use _ <- result.try(db_query.exec_plain(edges_sql, conn))
+  use _ <- result.try(db_query.exec_plain(room_aps_sql, conn))
+  use _ <- result.try(
+    list.try_each(index_sqls, fn(sql) { db_query.exec_plain(sql, conn) }),
+  )
+  use _ <- result.try(db_query.exec_plain(users_sql, conn))
+  use _ <- result.try(db_query.exec_plain(sessions_sql, conn))
 
   // Fold any readings recorded by an older version of the app into room_aps.
   use _ <- result.try(migrate_fingerprints(conn))
@@ -192,9 +228,7 @@ CREATE TABLE IF NOT EXISTS sessions (
 ///
 /// The old table is left in place rather than dropped. It is small once the
 /// data has been copied, and leaving it means a rollback does not lose data.
-fn migrate_fingerprints(
-  conn: sqlight.Connection,
-) -> Result(Nil, sqlight.Error) {
+fn migrate_fingerprints(conn: Connection) -> Result(Nil, Nil) {
   let sql =
     "
   INSERT OR REPLACE INTO room_aps
@@ -221,14 +255,15 @@ fn migrate_fingerprints(
   )
   GROUP BY node_id, LOWER(bssid)
   "
-  case has_table(conn, "fingerprints") {
-    True -> sqlight.exec(sql, conn)
+  let present = has_table(conn, "fingerprints")
+  case present {
+    True -> db_query.exec_plain(sql, conn)
     False -> Ok(Nil)
   }
 }
 
 /// Whether a table with this name exists in the database.
-fn has_table(conn: sqlight.Connection, name: String) -> Bool {
+pub fn has_table(conn: Connection, name: String) -> Bool {
   let sql =
     "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1"
   let decoder = {

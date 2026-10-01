@@ -8,6 +8,25 @@ import gleam/string
 @external(erlang, "env_ffi", "get_env")
 fn get_env(key: String) -> Result(String, Nil)
 
+// --- Turso credentials ---
+
+/// The Turso URL and token, from `DATABASE_URL` and `DATABASE_TOKEN`.
+///
+/// Both must be present. When they are, the backend talks to Turso instead of
+/// opening a local SQLite file — which matters in production, where a local
+/// file lives in `/tmp` and is wiped on every redeploy.
+///
+/// The URL may be given as `libsql://host` or the newer `libsql:host`; both are
+/// accepted and normalised when the request is made.
+pub fn turso_credentials() -> Result(#(String, String), Nil) {
+  use url <- result.try(get_env("DATABASE_URL"))
+  use token <- result.try(get_env("DATABASE_TOKEN"))
+  case url == "" || token == "" {
+    True -> Error(Nil)
+    False -> Ok(#(url, token))
+  }
+}
+
 // --- Access Key ---
 
 /// The shared access key clients must present, from the `AUTH_KEY` env var.

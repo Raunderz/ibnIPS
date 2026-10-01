@@ -295,7 +295,7 @@ fn parse_ping_body(body: String) -> Result(PingRequest, Nil) {
 /// All three writes run in one transaction, so a failure part-way through
 /// leaves the room and its edges unchanged rather than half-written.
 fn process_ping(
-  conn: sqlight.Connection,
+  conn: db.Connection,
   ping: PingRequest,
 ) -> Result(String, PingError) {
   db_query.transaction(conn, to_ping_error, fn() {
@@ -331,7 +331,7 @@ fn tag_db_error(result: Result(a, String)) -> Result(a, PingError) {
 /// `BEGIN IMMEDIATE` in `db_query.transaction` already holds the write lock, so
 /// the lookup-then-insert here cannot race another request for the same room.
 fn resolve_node(
-  conn: sqlight.Connection,
+  conn: db.Connection,
   ping: PingRequest,
 ) -> Result(String, PingError) {
   let node_id = generate_node_id(ping.name, ping.floor)
@@ -351,7 +351,7 @@ fn resolve_node(
 /// Checks that `previous_node_id` names a room that exists, so a client cannot
 /// build edges pointing at nodes that were never tagged.
 fn link_or_return(
-  conn: sqlight.Connection,
+  conn: db.Connection,
   node_id: String,
   ping: PingRequest,
 ) -> Result(String, PingError) {
@@ -442,7 +442,7 @@ fn ping_request_decoder() -> decode.Decoder(PingRequest) {
 
 /// Insert a new node row.
 fn insert_node(
-  conn: sqlight.Connection,
+  conn: db.Connection,
   node_id: String,
   name: String,
   floor: Int,
@@ -455,7 +455,7 @@ fn insert_node(
 }
 
 /// Whether a node with this id exists.
-fn node_exists(conn: sqlight.Connection, node_id: String) -> Bool {
+fn node_exists(conn: db.Connection, node_id: String) -> Bool {
   let sql = "SELECT node_id FROM nodes WHERE node_id = ?"
   let decoder = {
     use node_id <- decode.field("node_id", decode.string)
@@ -486,7 +486,7 @@ fn node_exists(conn: sqlight.Connection, node_id: String) -> Bool {
 /// Runs inside the caller's transaction, so a failure rolls back the node and
 /// edge rows written alongside it.
 fn insert_fingerprints(
-  conn: sqlight.Connection,
+  conn: db.Connection,
   node_id: String,
   fingerprints: List(Fingerprint),
 ) -> Result(Nil, String) {
@@ -552,7 +552,7 @@ type RoomAp {
 
 /// Every network already recorded for this room, keyed by BSSID.
 fn load_room_aps(
-  conn: sqlight.Connection,
+  conn: db.Connection,
   node_id: String,
 ) -> Result(Dict(String, RoomAp), String) {
   let sql =
@@ -645,10 +645,7 @@ fn previous_first_seen(previous: Result(RoomAp, Nil), now: Int) -> Int {
 }
 
 /// Write one room's numbers for one network back to the database.
-fn save_room_ap(
-  conn: sqlight.Connection,
-  room_ap: RoomAp,
-) -> Result(Nil, String) {
+fn save_room_ap(conn: db.Connection, room_ap: RoomAp) -> Result(Nil, String) {
   let sql =
     "INSERT OR REPLACE INTO room_aps
        (node_id, bssid, rssi_mean, rssi_m2, n, first_seen, last_seen)
@@ -669,7 +666,7 @@ fn save_room_ap(
 /// Re-tagging the same pair of rooms is a normal thing for a client to do, so a
 /// duplicate edge is treated as success rather than an error.
 fn insert_edge(
-  conn: sqlight.Connection,
+  conn: db.Connection,
   from_node: String,
   to_node: String,
   steps: Int,

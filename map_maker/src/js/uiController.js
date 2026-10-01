@@ -7,6 +7,9 @@ export class UiController {
     this.dbLoader = dbLoader;
     this.exporter = exporter;
     this.apiUrl = 'http://localhost:8080/api/map';
+    // Wi-Fi readings held for export. Populated when a database or map.json
+    // is loaded; empty means the export will carry no fingerprint data.
+    this.fingerprints = {};
     this.dirty = false;
 
     this.initElements();
@@ -88,7 +91,7 @@ export class UiController {
       try {
         const buffer = await file.arrayBuffer();
         const data = await this.dbLoader.loadDatabaseBuffer(buffer);
-        this.applyData(data.nodes, data.edges);
+        this.applyData(data.nodes, data.edges, data.fingerprints);
       } catch (err) {
         alert('Failed to parse database file: ' + err.message);
       }
@@ -98,7 +101,7 @@ export class UiController {
     const doFetch = async () => {
       try {
         const data = await this.dbLoader.fetchFromApi(this.apiUrl);
-        this.applyData(data.nodes, data.edges);
+        this.applyData(data.nodes, data.edges, data.fingerprints);
       } catch (err) {
         alert('Failed to fetch from API: ' + err.message);
       }
@@ -128,7 +131,7 @@ export class UiController {
 
     // Export
     this.btnExportJson.addEventListener('click', () => {
-      this.exporter.exportJson(this.engine.nodes, this.engine.edges);
+      this.exporter.exportJson(this.engine.nodes, this.engine.edges, this.fingerprints);
     });
 
     // Project save / open
@@ -318,11 +321,14 @@ export class UiController {
 
   applyJson(text) {
     const data = JSON.parse(text);
-    this.applyData(data.nodes || [], data.edges || []);
+    this.applyData(data.nodes || [], data.edges || [], data.fingerprints || {});
   }
 
-  applyData(nodes, edges) {
+  applyData(nodes, edges, fingerprints = {}) {
     autoLayout(nodes);
+    // Held on the controller so the export can carry Wi-Fi readings through.
+    // The editor does not draw or edit them, it just preserves them.
+    this.fingerprints = fingerprints || {};
     this.engine.setNodesAndEdges(nodes, edges);
     this.renderFloorTabs();
     this.updateStats();

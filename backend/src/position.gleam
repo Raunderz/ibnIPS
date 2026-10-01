@@ -11,6 +11,7 @@
 // reading against a spread says "is this reading plausible for that room",
 // which is a different and better question than "does it match exactly".
 
+import db
 import db_query
 import gleam/dict.{type Dict}
 import gleam/dynamic/decode
@@ -121,10 +122,7 @@ pub type Match {
 /// Returns `200` with the best matching room and a confidence score, `404` if
 /// no tagged room shares a single network with the caller's scan, or an error
 /// response (400/500) on a malformed request or a database failure.
-pub fn handle(
-  request: wisp.Request,
-  conn: sqlight.Connection,
-) -> wisp.Response {
+pub fn handle(request: wisp.Request, conn: db.Connection) -> wisp.Response {
   use body <- wisp.require_string_body(request)
 
   case decode_body(body) {
@@ -138,10 +136,7 @@ pub fn handle(
 }
 
 /// Score every tagged room against `scans` and answer with the best one.
-fn respond(
-  conn: sqlight.Connection,
-  scans: List(Fingerprint),
-) -> wisp.Response {
+fn respond(conn: db.Connection, scans: List(Fingerprint)) -> wisp.Response {
   case load_tagged_nodes(conn) {
     Error(msg) -> error(500, "database_error", msg)
     Ok([]) ->
@@ -405,9 +400,7 @@ fn error(status: Int, code: String, details: String) -> wisp.Response {
 // --- Database ---
 
 /// Every room that has tagged networks, with each network's mean and spread.
-fn load_tagged_nodes(
-  conn: sqlight.Connection,
-) -> Result(List(TaggedNode), String) {
+fn load_tagged_nodes(conn: db.Connection) -> Result(List(TaggedNode), String) {
   let sql =
     "SELECT n.node_id, n.name, n.floor, n.x, n.y,
             a.bssid, a.rssi_mean, a.rssi_m2, a.n

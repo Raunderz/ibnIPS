@@ -14,7 +14,6 @@ import nodes
 import ping
 import position
 import rate_limit
-import sqlight
 import wisp
 import wisp/wisp_mist
 
@@ -77,7 +76,7 @@ pub fn main() -> Nil {
 ///   GET  /api/map          -> full graph (public)
 fn handle_request(
   request: wisp.Request,
-  conn: sqlight.Connection,
+  conn: db.Connection,
   jwt_secret: String,
   limiter: rate_limit.Limiter,
 ) -> wisp.Response {
@@ -101,7 +100,7 @@ fn handle_request(
 
 fn route(
   request: wisp.Request,
-  conn: sqlight.Connection,
+  conn: db.Connection,
   jwt_secret: String,
 ) -> wisp.Response {
   case wisp.path_segments(request) {

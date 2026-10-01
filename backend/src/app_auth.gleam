@@ -9,6 +9,7 @@
 //                     -> extract roll_no -> call handler
 
 import birl
+import db
 import db_query
 import env
 import gleam/bit_array
@@ -107,7 +108,7 @@ fn create_jwt(user_id: String, session_id: String, secret: String) -> String {
 /// Upsert user: insert if new, update last_login if existing.
 /// Uses INSERT ... ON CONFLICT for atomic upsert.
 fn upsert_user(
-  conn: sqlight.Connection,
+  conn: db.Connection,
   user_id: String,
   email: String,
 ) -> Result(Nil, String) {
@@ -125,7 +126,7 @@ fn upsert_user(
 
 /// Create a new session row.
 fn insert_session(
-  conn: sqlight.Connection,
+  conn: db.Connection,
   session_id: String,
   user_id: String,
   expires_at: Int,
@@ -142,7 +143,7 @@ fn insert_session(
 /// Look up session by ID and check it's not expired.
 /// Returns user_id if valid session.
 fn validate_session(
-  conn: sqlight.Connection,
+  conn: db.Connection,
   session_id: String,
 ) -> Result(String, String) {
   let sql =
@@ -168,7 +169,7 @@ fn validate_session(
 
 /// Delete a session row, revoking the token that carries it.
 fn delete_session(
-  conn: sqlight.Connection,
+  conn: db.Connection,
   session_id: String,
 ) -> Result(Nil, String) {
   db_query.exec_with_args(
@@ -184,7 +185,7 @@ fn delete_session(
 /// authenticate anything — `validate_session` rejects them — but without this
 /// the table grows without bound. Errors are ignored: housekeeping must never
 /// fail a login.
-fn purge_expired_sessions(conn: sqlight.Connection) -> Nil {
+fn purge_expired_sessions(conn: db.Connection) -> Nil {
   let _ =
     db_query.exec_with_args(
       "DELETE FROM sessions WHERE expires_at <= unixepoch()",
@@ -221,7 +222,7 @@ fn parse_auth_body(body: String) -> Result(AuthRequest, Nil) {
 /// 8. Return token + user_id
 pub fn handle_auth(
   request: wisp.Request,
-  conn: sqlight.Connection,
+  conn: db.Connection,
   jwt_secret: String,
 ) -> wisp.Response {
   use body <- wisp.require_string_body(request)
@@ -239,7 +240,7 @@ pub fn handle_auth(
 /// addresses are real.
 fn check_access_key(
   auth_req: AuthRequest,
-  conn: sqlight.Connection,
+  conn: db.Connection,
   jwt_secret: String,
 ) -> wisp.Response {
   case is_valid_access_key(auth_req.access_key, env.auth_key()) {
@@ -251,7 +252,7 @@ fn check_access_key(
 /// Check the email is an institutional one and turn it into a user id.
 fn check_email(
   auth_req: AuthRequest,
-  conn: sqlight.Connection,
+  conn: db.Connection,
   jwt_secret: String,
 ) -> wisp.Response {
   case is_valid_email(auth_req.email) {
@@ -266,7 +267,7 @@ fn check_email(
 
 /// Record the user and their new session, then sign and return a token.
 fn create_session(
-  conn: sqlight.Connection,
+  conn: db.Connection,
   jwt_secret: String,
   user_id: String,
   auth_req: AuthRequest,
@@ -313,7 +314,7 @@ fn error(status: Int, code: String, details: String) -> wisp.Response {
 /// This is used by require_auth and handle_logout below.
 fn validate_token(
   req: wisp.Request,
-  conn: sqlight.Connection,
+  conn: db.Connection,
   jwt_secret: String,
 ) -> Result(#(String, String), wisp.Response) {
   case request.get_header(req, "authorization") {
@@ -384,7 +385,7 @@ fn validate_token(
 ///   })
 pub fn require_auth(
   request: wisp.Request,
-  conn: sqlight.Connection,
+  conn: db.Connection,
   jwt_secret: String,
   handler: fn(String) -> wisp.Response,
 ) -> wisp.Response {
@@ -403,7 +404,7 @@ pub fn require_auth(
 /// Returns `{"status":"logged_out"}`.
 pub fn handle_logout(
   request: wisp.Request,
-  conn: sqlight.Connection,
+  conn: db.Connection,
   jwt_secret: String,
 ) -> wisp.Response {
   case validate_token(request, conn, jwt_secret) {
