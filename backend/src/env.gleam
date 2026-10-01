@@ -8,6 +8,42 @@ import gleam/string
 @external(erlang, "env_ffi", "get_env")
 fn get_env(key: String) -> Result(String, Nil)
 
+// --- Access Key ---
+
+/// The shared access key clients must present, from the `AUTH_KEY` env var.
+///
+/// This is the credential that protects `POST /api/auth`, which is otherwise
+/// open: it issues a token to anyone who asks. Without it, anyone could mint a
+/// token for any user and then write to the fingerprint database.
+///
+/// Returns `Error` when unset or too short to be worth having.
+///
+/// Unlike `jwt_secret` this does not stop the server booting. A missing key
+/// means every login is refused, which is loud and safe — refusing to boot
+/// would take the deployed service down for anyone who has not set it yet.
+pub fn auth_key() -> Result(String, String) {
+  let min_length = 16
+
+  case get_env("AUTH_KEY") {
+    Ok(key) ->
+      case string.length(key) < min_length {
+        True ->
+          Error(
+            "AUTH_KEY must be at least "
+            <> int.to_string(min_length)
+            <> " characters. Generate one with `openssl rand -hex 16`.",
+          )
+        False -> Ok(key)
+      }
+    Error(_) ->
+      Error(
+        "AUTH_KEY is not set. Every login will be refused until it is, because "
+        <> "it is the only thing stopping anyone from claiming another "
+        <> "user's account.",
+      )
+  }
+}
+
 /// The port to listen on, from the `PORT` env var, or `default` if unset.
 pub fn port(default: Int) -> Int {
   case get_env("PORT") {

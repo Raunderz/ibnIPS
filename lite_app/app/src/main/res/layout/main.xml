@@ -18,7 +18,7 @@
     <LinearLayout
         android:id="@+id/controlOverlay"
         android:layout_width="match_parent"
-        android:layout_height="180dp"
+        android:layout_height="222dp"
         android:layout_gravity="bottom"
         android:background="@drawable/panel_bottom"
         android:elevation="8dp"
@@ -117,6 +117,19 @@
                 android:textSize="13sp"
                 android:maxLines="3"
                 android:ellipsize="end" />
+
+            <EditText
+                android:id="@+id/accessKeyInput"
+                android:layout_width="match_parent"
+                android:layout_height="38dp"
+                android:layout_marginBottom="4dp"
+                android:background="@drawable/edittext_rounded_background"
+                android:hint="Access key"
+                android:textSize="13sp"
+                android:inputType="textPassword"
+                android:singleLine="true"
+                android:imeOptions="actionDone"
+                android:padding="8dp" />
 
             <EditText
                 android:id="@+id/roomNameInput"

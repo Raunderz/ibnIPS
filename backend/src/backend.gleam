@@ -12,6 +12,7 @@ import map
 import mist
 import nodes
 import ping
+import position
 import rate_limit
 import sqlight
 import wisp
@@ -71,6 +72,7 @@ pub fn main() -> Nil {
 ///   POST /api/auth         -> login (no auth required)
 ///   POST /api/auth/logout  -> revoke the caller's session (auth required)
 ///   POST /api/ping         -> tag room (auth required)
+///   POST /api/position     -> locate caller from a Wi-Fi scan (auth required)
 ///   GET  /api/nodes        -> list nodes (public)
 ///   GET  /api/map          -> full graph (public)
 fn handle_request(
@@ -137,6 +139,19 @@ fn route(
       case request.method {
         http.Get -> nodes.handle(request, conn)
         _ -> wisp.method_not_allowed(allowed: [http.Get])
+      }
+    }
+
+    // Position — auth required. Locates the caller from a live Wi-Fi scan
+    // against the fingerprints stored by POST /api/ping.
+    ["api", "position"] -> {
+      case request.method {
+        http.Post -> {
+          app_auth.require_auth(request, conn, jwt_secret, fn(_user_id) {
+            position.handle(request, conn)
+          })
+        }
+        _ -> wisp.method_not_allowed(allowed: [http.Post])
       }
     }
 

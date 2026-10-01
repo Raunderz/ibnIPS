@@ -31,12 +31,19 @@ public class MainActivity extends Activity {
     private static final int    PERM_REQ      = 1001;
     private static final int    SCAN_DELAY    = 2500; // ms before reading scan results
     private static final String PREF_TAGGED   = "tagged_locations_json";
+    private static final String PREF_ACCESS_KEY = "access_key";
+    /** The email whose account the app logs in as. */
+    private static final String AUTH_EMAIL    = "user@kiit.ac.in";
+    /** Visits of a room below which the app suggests more tagging. Matches the
+     *  backend's WELL_MAPPED_READINGS. */
+    private static final int    WELL_MAPPED_SAMPLES = 10;
 
     // ------------------------------------------------------------------
     // Views
     // ------------------------------------------------------------------
     private MapView   mapView;
     private TextView  statusText;
+    private EditText  accessKeyInput;
     private EditText  roomNameInput;
     private Spinner   floorSpinner;
     private Button    scanButton;
@@ -67,6 +74,7 @@ public class MainActivity extends Activity {
         // Bind views
         mapView        = findViewById(R.id.mapView);
         statusText     = findViewById(R.id.statusText);
+        accessKeyInput = findViewById(R.id.accessKeyInput);
         roomNameInput  = findViewById(R.id.roomNameInput);
         floorSpinner   = findViewById(R.id.floorSpinner);
         scanButton     = findViewById(R.id.btnScan);
@@ -90,22 +98,23 @@ public class MainActivity extends Activity {
         fetchMapButton.setOnClickListener(v -> { animatePress(v); onFetchMapClicked(); });
         locateMeButton.setOnClickListener(v -> { animatePress(v); onLocateMeClicked(); });
 
+        // Pressing the key field re-authenticates, so a corrected key takes
+        // effect without restarting the app.
+        accessKeyInput.setOnEditorActionListener((v, actionId, event) -> {
+            authenticateInBackground();
+            return true;
+        });
+
         // Load persistent tagged locations
         loadTaggedLocations();
 
-        // Authenticate in background on startup
-        setStatus("Authenticating…", false);
-        runInBackground(() -> {
-            String token = backendClient.authenticate("user@kiit.ac.in");
-            mainHandler.post(() -> {
-                if (token != null) {
-                    authToken = token;
-                    setStatus("Ready", false);
-                } else {
-                    setStatus("Auth failed — check backend", true);
-                }
-            });
-        });
+        // Restore the saved access key and log in if there is one.
+        accessKeyInput.setText(loadAccessKey());
+        if (loadAccessKey().isEmpty()) {
+            setStatus("Enter the access key to connect", true);
+        } else {
+            authenticateInBackground();
+        }
     }
 
     @Override
@@ -114,6 +123,52 @@ public class MainActivity extends Activity {
         if (authToken != null) {
             setStatus("Ready", false);
         }
+    }
+
+    // ------------------------------------------------------------------
+    // Authentication
+    // ------------------------------------------------------------------
+
+    /**
+     * Exchange the access key for a bearer token, off the UI thread.
+     *
+     * Saves the key so the user only types it once, then retries.
+     */
+    private void authenticateInBackground() {
+        final String key = accessKeyInput.getText().toString().trim();
+
+        if (key.isEmpty()) {
+            authToken = null;
+            setStatus("Enter the access key to connect", true);
+            return;
+        }
+
+        setStatus("Authenticating…", false);
+        runInBackground(() -> {
+            String token = backendClient.authenticate(AUTH_EMAIL, key);
+            mainHandler.post(() -> {
+                if (token != null) {
+                    authToken = token;
+                    saveAccessKey(key);
+                    setStatus("Ready", false);
+                } else {
+                    authToken = null;
+                    setStatus("Wrong access key", true);
+                    Toast.makeText(MainActivity.this,
+                            "The backend rejected that access key.", Toast.LENGTH_LONG).show();
+                }
+            });
+        });
+    }
+
+    private void saveAccessKey(String key) {
+        SharedPreferences prefs = getSharedPreferences("ibnIPS_prefs", MODE_PRIVATE);
+        prefs.edit().putString(PREF_ACCESS_KEY, key).apply();
+    }
+
+    private String loadAccessKey() {
+        SharedPreferences prefs = getSharedPreferences("ibnIPS_prefs", MODE_PRIVATE);
+        return prefs.getString(PREF_ACCESS_KEY, "");
     }
 
     // ------------------------------------------------------------------
@@ -292,13 +347,29 @@ public class MainActivity extends Activity {
 
             final PositionResponse finalBackendPos = backendPos;
             mainHandler.post(() -> {
-                // Check backend or local result
-                if (finalBackendPos != null && !isEmptyStr(finalBackendPos.name)) {
+                // Backend answer first, but only if it is confident enough to
+                // be worth more than the local match.
+                if (finalBackendPos != null && finalBackendPos.isConfident()) {
                     String locName = resolveLocationName(finalBackendPos);
-                    setStatus("Current location of you is: " + locName, false);
-                    Toast.makeText(MainActivity.this, "Current location of you is: " + locName, Toast.LENGTH_LONG).show();
-                    if (finalBackendPos.x >= 0 && finalBackendPos.y >= 0) {
-                        mapView.setUserPositionAnimated(finalBackendPos.x, finalBackendPos.y, finalBackendPos.floor);
+                    String statusMsg = "Current location of you is: " + locName
+                            + " (" + finalBackendPos.confidenceLevel
+                            + " confidence — " + finalBackendPos.confidence + "%)";
+                    // Say when the room matches well but is barely mapped, so
+                    // the user knows more walks would make it better.
+                    if (finalBackendPos.confidence >= 75
+                            && finalBackendPos.samples < WELL_MAPPED_SAMPLES) {
+                        statusMsg += " — only seen " + finalBackendPos.samples
+                                + " time(s), keep tagging this room";
+                    }
+                    setStatus(statusMsg, finalBackendPos.confidence < 75);
+                    Toast.makeText(MainActivity.this, statusMsg, Toast.LENGTH_LONG).show();
+
+                    // The server's x/y come straight from the nodes table, which
+                    // holds 0,0 until a room is placed on the map. Prefer the
+                    // coordinates from the map we already fetched.
+                    int[] coords = resolveMapCoords(finalBackendPos);
+                    if (coords != null) {
+                        mapView.setUserPositionAnimated(coords[0], coords[1], finalBackendPos.floor);
                     }
                     return;
                 }
@@ -429,6 +500,31 @@ public class MainActivity extends Activity {
             }
         }
         return "Unknown";
+    }
+
+    /**
+     * Map coordinates for a backend answer, preferring the map already fetched
+     * from GET /api/map over the x/y the server sent.
+     *
+     * <p>The server reads x/y from the nodes table, which stays 0,0 until a
+     * room is placed on the map — only map.json has real coordinates. So look
+     * the node up by id first, and only fall back to the server's own numbers
+     * when the cached map does not know this room.
+     *
+     * @return {x, y}, or null if there is nowhere sensible to draw the dot
+     */
+    private int[] resolveMapCoords(PositionResponse pos) {
+        if (cachedMapData != null && cachedMapData.nodes != null) {
+            for (MapNode node : cachedMapData.nodes) {
+                if (node.nodeId != null && node.nodeId.equals(pos.nodeId)) {
+                    return new int[]{node.x, node.y};
+                }
+            }
+        }
+        if (pos.x >= 0 && pos.y >= 0) {
+            return new int[]{pos.x, pos.y};
+        }
+        return null;
     }
 
     private boolean isEmptyStr(String str) {

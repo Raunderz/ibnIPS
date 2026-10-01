@@ -36,28 +36,30 @@ to_bin(C) when is_binary(C) -> C.
 exec_with_args(Sql, Connection, Arguments) ->
     case esqlite3:prepare(Connection, unicode:characters_to_list(Sql)) of
         {error, _} ->
-            Info = esqlite3:error_info(Connection),
-            Msg = maps:get(errmsg, Info, <<>>),
-            {error, {db_error, Msg}};
+            {error, {db_error, errmsg(Connection)}};
         {ok, Stmt} ->
             try esqlite3:bind(Stmt, Arguments) of
                 ok ->
-                    try esqlite3:step(Stmt) of
-                        '$done' -> {ok, nil};
-                        _ -> {ok, nil}
-                    catch
-                        _:_ ->
-                            Info = esqlite3:error_info(Connection),
-                            Msg = maps:get(errmsg, Info, <<>>),
+                    case esqlite3:step(Stmt) of
+                        '$done' ->
+                            {ok, nil};
+                        {error, _} ->
+                            {error, {db_error, errmsg(Connection)}};
+                        Other ->
+                            Msg = iolist_to_binary(
+                                io_lib:format("unexpected step result: ~p", [Other])),
                             {error, {db_error, Msg}}
                     end;
                 {error, _} ->
-                    Info = esqlite3:error_info(Connection),
-                    Msg = maps:get(errmsg, Info, <<>>),
-                    {error, {db_error, Msg}}
+                    {error, {db_error, errmsg(Connection)}}
             catch
                 error:Reason ->
-                    Msg = iolist_to_binary(io_lib:format("~p", [Reason])),
-                    {error, {db_error, Msg}}
+                    {error, {db_error, iolist_to_binary(
+                        io_lib:format("~p", [Reason]))}}
             end
     end.
+
+%% The human-readable message for whatever went wrong on this connection.
+errmsg(Connection) ->
+    Info = esqlite3:error_info(Connection),
+    maps:get(errmsg, Info, <<>>).

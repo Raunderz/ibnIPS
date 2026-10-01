@@ -2,203 +2,102 @@
 
 **I Better Navigate** — Indoor Positioning System.
 
-Indoor positioning for campus buildings using ambient Wi-Fi. No GPS, no beacons, no extra hardware.
+Locating yourself inside a campus building using the Wi-Fi networks that are
+already there. No GPS indoors, no beacons, no extra hardware.
 
-**Canonical stack: `lite_app` (Android) + `backend` (Gleam).** Other frontends and tools in this repo are secondary/experimental.
+## How It Works
 
-## What It Does
+**Ambient Wi-Fi is the signal.** Every access point broadcasts continuously, and
+its signal strength at your position is roughly predictable. A phone already
+receives this information during any scan, so positioning needs no new hardware
+on either the user or the building.
 
-- Scans nearby Wi-Fi networks and matches fingerprints against tagged rooms
-- Shows your position on a floor plan (custom Canvas renderer)
-- Tags rooms to improve accuracy over time
-- Works with local fingerprint matching when the backend position endpoint is unavailable
+**Rooms are fingerprinted, positions are inferred.** Instead of trying to
+compute coordinates from signal geometry, the system learns what each room
+*looks like* in Wi-Fi terms and then recognises which room a scan resembles.
+Signal strength alone is too noisy for geometry; room-level fingerprint
+matching is what makes the approach practical.
+
+**A room remembers a distribution, not a reading.** The signal in one room
+moves as you cross it, so a single stored value cannot represent the room. Each
+room keeps the average signal and the spread for every network it has heard.
+A live scan is then tested against that spread — *is this reading plausible for
+this room* — rather than against a fixed number.
+
+**Accuracy compounds with visits.** Re-walking a room refines its statistics
+instead of adding rows. The same input, submitted repeatedly, produces a
+progressively sharper model, which is why coverage effort maps to accuracy
+directly.
+
+**Every device benefits from every walk.** Tagging is a shared write, not a
+per-device one. A room tagged once is usable from any phone, and the fallback
+local matcher only exists so the app still answers when the network does not.
+
+**Confidence is reported, not implied.** A match carries how strongly the
+evidence supports it, and how much data stands behind it. A weak answer is
+presented as weak, and the client is free to distrust it.
+
+## Principles
+
+- **Privacy** — position is derived on-device from ambient signals already
+  exposed by the Wi-Fi stack. Nothing about a user's movement is required to
+  locate them, and no per-user location history is needed for the system to work.
+- **Progressive enhancement** — accuracy grows with coverage. A sparsely mapped
+  building returns low-confidence answers rather than failing outright.
+- **Graceful degradation** — offline, or on a low-confidence answer, the app
+  falls back to on-device matching instead of showing nothing.
+- **Boring code** — plain functions, no clever abstractions, comments that
+  explain *why*. Correctness over cleverness.
+- **Bounded growth** — per-request limits on size and frequency; stored data
+  stays proportional to distinct rooms and networks, not to total visits.
 
 ## Repo Layout
 
-| Path | Role | Status |
-|------|------|--------|
-| `lite_app/` | Pure-Java Android app (~400KB APK, no external deps) | **Primary frontend** |
-| `backend/` | Gleam/wisp API on Erlang/BEAM + SQLite | **Primary backend** |
-| `map_maker/` | Browser map editor (Vite + vanilla JS) → exports `map.json` | Tooling |
-| `app/` | React Native (Expo) frontend | Secondary / experimental |
-| `kt_app/` | Kotlin + Jetpack Compose frontend | Secondary / experimental |
+| Path | Role |
+|------|------|
+| `lite_app/` | **Primary frontend** — Android app, pure Java, no external dependencies |
+| `backend/` | **Primary backend** — API service on Erlang/BEAM with SQLite storage |
+| `map_maker/` | Tooling — browser map editor, exports the map the API serves |
+| `app/`, `kt_app/` | Secondary / experimental frontends |
 
-## Architecture
+`lite_app` and `backend` are the source of truth for behaviour and API
+contracts.
 
-```
-lite_app (Android, pure Java)
-  ↓ HTTP JSON (Bearer JWT)
-backend (Gleam / wisp / mist on BEAM)
-  ├─→ SQLite (icps.db)  — users, sessions, nodes, edges, fingerprints
-  └─→ map.json          — remote URL via MAP_JSON_URL (file not in git), or local fallback
-
-map_maker (browser)  —→  exports map.json  —→  host at MAP_JSON_URL (not committed)
-```
-
-`GET /api/map` does **not** query SQLite. It serves map data from `MAP_JSON_URL` when set; otherwise falls back to a local `map.json`. **`map.json` is gitignored** — it is not stored in the repository.
-
-## Backend
-
-Gleam service (`backend/`). Runs on wisp + mist, binds `0.0.0.0`, port `3000` (or `$PORT`). Creates and migrates `icps.db` on first run.
-
-### Run
+## Getting Started
 
 ```bash
-cd backend
-gleam run          # serve on :3000
-gleam test
-gleam format
+cd backend && gleam run     # API on :3000, creates its database on first run
+cd backend && gleam test    # test suite
+cd lite_app && ./build.sh   # Android APK
 ```
 
-### Docker
+## Documentation
 
-```bash
-cd backend
-docker build -t ibnips-backend .
-docker run -p 3000:3000 -e JWT_SECRET=... -e MAP_JSON_URL=... ibnips-backend
-```
+- [`backend/schema.md`](backend/schema.md) — API reference: endpoints, request
+  and response shapes, error codes, and how matching is scored
+- [`backend/README.md`](backend/README.md) — backend setup and configuration
+- [`lite_app/guide.md`](lite_app/guide.md) — Android app notes
 
-`map.json` is not copied into the image. Provide `MAP_JSON_URL` at runtime (Render env, `-e`, or `.env`).
+Operational configuration is documented alongside the code it configures rather
+than here.
 
-### Environment Variables
+## Limitations
 
-Read from OS env first, then a `.env` file in the working directory (supports `#` comments and quoted values).
+Accuracy depends on the building, not on the software.
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `JWT_SECRET` | **Always** | HS256 signing secret, min 32 chars. **The server refuses to start without it** — there is no fallback, since a key committed to this repo would let anyone forge tokens. |
-| `PORT` | No | Listen port (default `3000`) |
-| `DB_PATH` | Yes (prod) | SQLite file path (default `icps.db` in the working directory). **Set this on Render** (`/tmp/icps.db`) — the working directory is read-only there, so the default fails to open. |
-| `MAP_JSON_URL` | Yes (prod) | Remote URL for `GET /api/map`. Set in Render (or local `.env`). `map.json` is gitignored. |
-
-Example `.env` (generate the secret — don't invent one):
-
-```env
-# openssl rand -hex 32
-JWT_SECRET=<paste the generated value here>
-# MAP_JSON_URL in Render env (or local .env) — map.json is not in git
-DB_PATH=/tmp/icps.db
-```
-
-### API
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| `GET` | `/` | No | Health check |
-| `POST` | `/api/auth` | No | Issue JWT (`@kiit.ac.in` email; roll number becomes `user_id`) |
-| `POST` | `/api/auth/logout` | Yes | Revoke the caller's session immediately |
-| `POST` | `/api/ping` | Yes | Tag a room with Wi-Fi fingerprints |
-| `GET` | `/api/nodes` | No | List all nodes |
-| `GET` | `/api/map` | No | Full graph from `MAP_JSON_URL` (or local fallback `map.json`) |
-
-### Request Limits
-
-Applied server-side to every `/api/*` route; `GET /` is exempt so uptime
-monitors are never throttled.
-
-| Limit | Value | Response when exceeded |
-|-------|-------|------------------------|
-| Requests per client | 60 per 60s window, keyed on left-most `x-forwarded-for` | `429 {"error":"rate_limited"}` |
-| Request body | 64 KiB | `413` |
-| Fingerprints per ping | 200 | `400 validation_failed` |
-| Room name | 100 characters | `400 validation_failed` |
-| Steps between rooms | 1–1000 | `400 validation_failed` |
-
-`previous_node_id` must name a room that exists; otherwise `400
-unknown_previous_node`. Ping writes run in one transaction on a per-request
-connection, so a failure leaves no partial room or edge behind.
-
-Full API docs: [`backend/schema.md`](backend/schema.md). Backend details: [`backend/README.md`](backend/README.md).
-
-### Auth Model
-
-- `POST /api/auth` requires an `@kiit.ac.in` email; extracts roll number (e.g. `23b1234`) as `user_id`.
-- Issues an **HS256 JWT** (`sub`, `sid`, `iat`, `exp` +24h) signed with `JWT_SECRET`.
-- **Server-side sessions:** `sid` is checked against the `sessions` table on every protected request. Expired/missing session → 401 even if the JWT is still valid.
-
-### Database (SQLite)
-
-- `nodes` — room graph vertices (`node_id`, `name`, `floor`, `x`, `y`); coordinates assigned via `map_maker`
-- `edges` — navigation mesh (`from_node`, `to_node`, `steps`, `direction` N/NE/E/…/NW)
-- `fingerprints` — Wi-Fi readings per node (`bssid`, `ssid`, `rssi`, `sample_count`)
-- `users`, `sessions` — auth
-
-Node id convention: `lowercased_name_underscores_f<floor>` (e.g. `lab_201_f2`).
-
-## lite_app (Primary Frontend)
-
-Minimal **pure-Java** Android app — framework APIs + `org.json` + `HttpURLConnection` only. No Kotlin, no AndroidX. Targets API 26+ (Android 8.0+). Package `com.example.ibnips`.
-
-### Features
-
-- **SCAN** — Wi-Fi scan (GPS must be ON); results read after a short delay
-- **PING** — tag a room: saves fingerprints locally (SharedPreferences), then `POST /api/ping`
-- **FETCH MAP** — `GET /api/map`, renders the graph, merges returned fingerprints locally
-- **LOCATE ME** — tries backend position matching first; falls back to **local fingerprint matching** with confidence tiers (≥75% high, ≥50% medium, <30% rejected)
-- Auto-authenticates on startup with a `@kiit.ac.in` address
-- Custom Canvas floor plan with animated pin
-
-### Build
-
-```bash
-cd lite_app
-./build.sh              # debug APK
-./build.sh install      # install + adb reverse tcp:3000 tcp:3000 (local backend)
-./build.sh release      # R8/minified
-```
-
-Production base URL is hardcoded in `HttpBackendClient.java` (`https://ibnips.onrender.com`). For local dev, use `./build.sh install` so `adb reverse` routes to your machine's `:3000`.
-
-## map_maker (Map Editor)
-
-Browser tool for arranging the building navigation mesh. Loads `icps.db` client-side (sql.js/WASM) or via `GET /api/map`. Exports:
-
-- **`map.json`** — backend-contract graph (`nodes` + `edges` only)
-- **`map_project.mapproj`** — richer editor project state
-
-```bash
-cd map_maker
-bun install && bun run dev     # or npm
-bun run build                  # → dist/ (committed)
-```
-
-Related: `backend/export_map.sh` merges DB rows into an existing `map.json` while preserving hand-placed x/y.
-
-## Secondary Frontends
-
-- **`app/`** — React Native (Expo, TypeScript, expo-router). Has mock mode and offline caching. Not the primary path.
-- **`kt_app/`** — Kotlin + Jetpack Compose (Retrofit, Hilt). Experimental.
-
-Treat `lite_app` + `backend` as source of truth for behavior and API contracts.
-
-## Known Issues
-
-- **Cold start:** Positioning is weak until enough fingerprints are tagged.
-- **Signal bleed:** Adjacent-floor APs can cause misfloor detection.
-- **Sparse coverage:** Few Wi-Fi networks → poor accuracy.
-- **Crowded environments:** Interference reduces reliability.
-- **Stale fingerprints:** Readings from decommissioned APs accumulate.
-- **`POST /api/position` is not implemented** on the backend; lite_app falls back to local matching.
+- **Sparse coverage** — few networks in range means a weak match.
+- **Signal bleed** — networks from adjacent floors can confuse floor detection.
+- **Interference** — crowded or busy environments degrade readings.
+- **Access-point churn** — networks that move or are decommissioned age out
+  after a staleness window, but need to be re-walked to be re-learned.
+- **Unweighted networks** — a building-wide network is visible from every room
+  and carries little information; weighting networks by how many rooms see them
+  is the next accuracy improvement.
+- **Rooms are identified by name** — two genuinely different rooms whose names
+  differ only by punctuation are treated as one room.
 
 ## Possible Improvements
 
-- Server-side position endpoint (`POST /api/position`) to replace client-side fallback
-- Fingerprint aging and automatic cleanup
-- Multi-device fingerprint aggregation
-- Kalman filtering for smoother tracking
-- Coverage heatmaps
-- Move `backend/.github/workflows/test.yml` to repo root so CI actually runs (nested `.github` is ignored by GitHub)
-
-## Deployment
-
-- Backend: port `3000` (or `$PORT`), needs `JWT_SECRET` + `MAP_JSON_URL` in production; current deploy target `https://ibnips.onrender.com`
-- `JWT_SECRET` must be set before deploy — the service crash-loops without it by design
-- Docker image available (`backend/Dockerfile`); no docker-compose in-repo
-- lite_app builds to APK for Android distribution
-
-## Team
-
-- Backend: Position algorithms, API, database design
-- Frontend: Map UI, Wi-Fi scanning, real-time updates
-- Database: Schema, data validation, query optimization
-- Testing: End-to-end validation, mock data scenarios
+- Weight networks by how many rooms observe them
+- Motion smoothing across successive position estimates
+- Coverage heatmaps to guide mapping effort
