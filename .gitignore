@@ -44,6 +44,8 @@ node_modules/
 # Backend generated/local data
 backend/icps.db
 backend/map.json
+exported_nodes_db.csv
+nodes_db.csv
 backend/.env
 
 # Build output

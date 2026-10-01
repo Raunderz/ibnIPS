@@ -42,6 +42,43 @@ pub fn exec_with_args(
   }
 }
 
+/// Run `fun` inside a transaction, rolling back if it returns an Error.
+///
+/// `BEGIN IMMEDIATE` takes the write lock up front. A deferred transaction that
+/// only upgrades to a write part-way through can fail with SQLITE_BUSY in a
+/// situation that cannot be retried without losing the work already done.
+///
+/// `to_error` converts this function's own database errors (begin, commit) into
+/// the caller's error type; errors from `fun` pass through untouched.
+///
+/// Call this with a connection dedicated to the current request — see
+/// `db.with_connection`. A transaction on a connection shared with other
+/// processes is not isolated from them.
+pub fn transaction(
+  conn: sqlight.Connection,
+  to_error to_error: fn(String) -> e,
+  run fun: fn() -> Result(a, e),
+) -> Result(a, e) {
+  case exec_with_args("BEGIN IMMEDIATE;", on: conn, with: []) {
+    Error(msg) -> Error(to_error(msg))
+    Ok(Nil) ->
+      case fun() {
+        Ok(value) ->
+          case exec_with_args("COMMIT;", on: conn, with: []) {
+            Ok(Nil) -> Ok(value)
+            Error(msg) -> {
+              let _ = exec_with_args("ROLLBACK;", on: conn, with: [])
+              Error(to_error(msg))
+            }
+          }
+        Error(e) -> {
+          let _ = exec_with_args("ROLLBACK;", on: conn, with: [])
+          Error(e)
+        }
+      }
+  }
+}
+
 /// Run a SELECT and decode each row (returned as a map of column -> value)
 /// through the given decoder.
 pub fn query_as_maps(

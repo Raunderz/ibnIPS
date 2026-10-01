@@ -69,8 +69,37 @@ pub type PingRequest {
 }
 
 /// What the app sends to log in.
+///
+/// `access_key` is the shared secret from `AUTH_KEY`. It is required, because
+/// `POST /api/auth` issues a token to whoever asks: without the key, anyone
+/// could claim any account.
 pub type AuthRequest {
-  AuthRequest(email: String)
+  AuthRequest(email: String, access_key: String)
+}
+
+/// What the app sends to ask where it is: the current Wi-Fi scan and nothing
+/// else. The server holds the tagged side of the comparison.
+pub type PositionRequest {
+  PositionRequest(fingerprints: List(Fingerprint))
+}
+
+/// The room the server believes the caller is in, plus how sure it is.
+///
+/// `confidence` is 0–100 and `confidence_level` is the matching tier
+/// ("High" / "Medium" / "Low" / "Uncertain"). The caller decides what counts
+/// as good enough — the server reports the best match it found rather than
+/// hiding a weak one, so a low-confidence answer is visibly weak.
+pub type PositionResult {
+  PositionResult(
+    node: Node,
+    // the matched room, including its map coordinates
+    confidence: Int,
+    // 0–100
+    confidence_level: String,
+    // "High" / "Medium" / "Low" / "Uncertain"
+    samples: Int,
+    // how many tagged readings the answer is based on
+  )
 }
 
 /// Standard error response shape: `{"error": code, "details": message}`.
@@ -89,7 +118,28 @@ pub type MapData {
 /// Decoder for an `AuthRequest` from JSON.
 pub fn decode_auth_request() -> decode.Decoder(AuthRequest) {
   use email <- decode.field("email", decode.string)
-  decode.success(AuthRequest(email))
+  use access_key <- decode.field("access_key", decode.string)
+  decode.success(AuthRequest(email, access_key))
+}
+
+/// Decoder for a single `Fingerprint` from JSON.
+///
+/// Lives here rather than in the handler so every endpoint that reads Wi-Fi
+/// readings decodes them the same way.
+pub fn decode_fingerprint() -> decode.Decoder(Fingerprint) {
+  use bssid <- decode.field("bssid", decode.string)
+  use ssid <- decode.field("ssid", decode.string)
+  use rssi <- decode.field("rssi", decode.int)
+  decode.success(Fingerprint(bssid, ssid, rssi))
+}
+
+/// Decoder for a `PositionRequest` from JSON.
+pub fn decode_position_request() -> decode.Decoder(PositionRequest) {
+  use fingerprints <- decode.field(
+    "fingerprints",
+    decode.list(decode_fingerprint()),
+  )
+  decode.success(PositionRequest(fingerprints))
 }
 
 // --- JSON Encoders ---
@@ -129,5 +179,28 @@ pub fn encode_map_data(data: MapData) -> json.Json {
   json.object([
     #("nodes", json.array(data.nodes, encode_node)),
     #("edges", json.array(data.edges, encode_edge)),
+  ])
+}
+
+/// Encode a `PositionResult` as JSON.
+///
+/// `x`/`y` are the matched node's map coordinates. They are `0` until a room
+/// has been placed on the map, so a client that cannot use coordinates should
+/// key off `node_id` and look the node up in the map it already fetched from
+/// `GET /api/map`.
+///
+/// `samples` is how many tagged readings back this answer. A low `samples` next
+/// to a high `confidence` means the room matched well but has barely been
+/// visited — worth more walks.
+pub fn encode_position_result(result: PositionResult) -> json.Json {
+  json.object([
+    #("x", json.int(result.node.x)),
+    #("y", json.int(result.node.y)),
+    #("floor", json.int(result.node.floor)),
+    #("node_id", json.string(result.node.node_id)),
+    #("name", json.string(result.node.name)),
+    #("confidence", json.int(result.confidence)),
+    #("confidence_level", json.string(result.confidence_level)),
+    #("samples", json.int(result.samples)),
   ])
 }

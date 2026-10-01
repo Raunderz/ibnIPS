@@ -32,13 +32,17 @@ public class HttpBackendClient {
     // ------------------------------------------------------------------
 
     /**
-     * @param email e.g. "user@kiit.ac.in"
+     * Exchanges an email and the shared access key for a bearer token.
+     *
+     * @param email    e.g. "user@kiit.ac.in"
+     * @param accessKey the shared secret configured as AUTH_KEY on the server
      * @return token string, or null on failure
      */
-    public String authenticate(String email) {
+    public String authenticate(String email, String accessKey) {
         try {
             JSONObject body = new JSONObject();
             body.put("email", email);
+            body.put("access_key", accessKey);
 
             JSONObject response = post("/api/auth", null, body);
             if (response == null) return null;
