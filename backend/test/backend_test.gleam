@@ -441,6 +441,23 @@ pub fn position_reports_a_well_mapped_perfect_match_as_high_test() {
   assert position.confidence_pct(1, 0.0, 100) == 60
 }
 
+pub fn position_reports_more_than_three_agreeing_networks_as_high_test() {
+  // The tier is "three or more", not "exactly three". Agreeing on eight
+  // networks is the strongest evidence there is, so it has to score as the top
+  // tier rather than falling through to the one-network tier.
+  assert position.confidence_pct(4, 0.0, 100) == 95
+  assert position.confidence_pct(8, 0.0, 100) == 95
+  assert position.confidence_pct(12, 0.0, 100) == 95
+}
+
+pub fn position_many_agreeing_networks_still_lose_confidence_for_strain_test() {
+  // Fixing the tier must not flatten the penalty: badly-off readings still pull
+  // the score down, and a thinly-mapped room is still capped.
+  assert position.confidence_pct(8, 0.0, 100)
+    > position.confidence_pct(8, 1.5, 100)
+  assert position.confidence_pct(8, 0.0, 1) <= 60
+}
+
 pub fn position_lowers_confidence_as_readings_move_further_off_test() {
   let near = position.confidence_pct(3, 0.3, 100)
   let far = position.confidence_pct(3, 1.5, 100)
@@ -463,6 +480,69 @@ pub fn position_matches_network_names_case_insensitively_test() {
     mapped_room("lab_201_f2", [#("AA:BB:CC:DD:EE:01", -55.0)]),
   ]
   let scan = scans([#("aa:bb:cc:dd:ee:01", -56)])
+
+  let assert Some(found) = position.best_match(rooms, scan)
+
+  assert found.agree == 1
+}
+
+// --- one network per scan, on the position side ---
+//
+// How many networks agree is the strongest signal a match has, so it has to
+// count networks the caller can see rather than how many times the caller
+// listed one. Otherwise a repeated BSSID outranks a genuine match.
+
+pub fn position_counts_a_repeated_network_once_test() {
+  let rooms = [mapped_room("lab_201_f2", three_networks())]
+  // The same network written down fifty times is still one network.
+  let scan =
+    list.repeat(models.Fingerprint("aa:bb:cc:dd:ee:01", "campus", -56), 50)
+
+  let assert Some(found) = position.best_match(rooms, scan)
+
+  assert found.agree == 1
+  assert found.points == 1
+}
+
+pub fn position_does_not_let_a_repeated_network_win_test() {
+  // Two rooms both see network 01. The second shares only that one network but
+  // lists it fifty times, so without the collapse it scores 50 points against
+  // the first room's genuine 3.
+  let rooms = [
+    mapped_room("one_network_f1", [#("aa:bb:cc:dd:ee:01", -55.0)]),
+    mapped_room("three_networks_f1", three_networks()),
+  ]
+  let scan =
+    list.append(
+      scans([
+        #("aa:bb:cc:dd:ee:01", -56),
+        #("aa:bb:cc:dd:ee:02", -61),
+        #("aa:bb:cc:dd:ee:03", -69),
+      ]),
+      list.repeat(models.Fingerprint("aa:bb:cc:dd:ee:01", "campus", -56), 50),
+    )
+
+  let assert Some(found) = position.best_match(rooms, scan)
+
+  assert found.tagged.node.node_id == "three_networks_f1"
+  assert found.agree == 3
+}
+
+pub fn position_keeps_the_strongest_of_two_readings_for_one_network_test() {
+  let rooms = [mapped_room("lab_201_f2", [#("aa:bb:cc:dd:ee:01", -55.0)])]
+  // This room allows 12 dBm either side of its mean. -50 is inside that, -95 is
+  // well outside it, so which of the two is kept decides points 1 versus -1.
+  let scan = scans([#("aa:bb:cc:dd:ee:01", -95), #("aa:bb:cc:dd:ee:01", -50)])
+
+  let assert Some(found) = position.best_match(rooms, scan)
+
+  assert found.agree == 1
+  assert found.points == 1
+}
+
+pub fn position_keeps_the_strongest_repeat_in_any_case_test() {
+  let rooms = [mapped_room("lab_201_f2", [#("aa:bb:cc:dd:ee:01", -55.0)])]
+  let scan = scans([#("aa:bb:cc:dd:ee:01", -95), #("AA:BB:CC:DD:EE:01", -40)])
 
   let assert Some(found) = position.best_match(rooms, scan)
 

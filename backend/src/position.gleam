@@ -180,6 +180,12 @@ pub fn best_match(
   tagged_nodes: List(TaggedNode),
   scans: List(Fingerprint),
 ) -> Option(Match) {
+  // Collapse the scan before scoring. How many networks agree is the strongest
+  // signal a match has, so it has to be a count of networks the caller can
+  // actually see — not a count of how many times the caller wrote one down.
+  // Without this, repeating a single BSSID scores points proportional to the
+  // repeat count and beats a room that genuinely matched more.
+  let scans = one_network_per_scan(scans)
   list.fold(tagged_nodes, None, fn(best: Option(Match), tagged) {
     case score_node(tagged, scans) {
       None -> best
@@ -194,6 +200,30 @@ pub fn best_match(
         }
     }
   })
+}
+
+/// One reading per network, keeping the strongest.
+///
+/// A real scan reports each network once, so the same network appearing twice —
+/// in any mix of upper and lower case, since BSSIDs are compared
+/// case-insensitively — is a client bug rather than a second measurement. The
+/// strongest reading is kept because that is the one a real scan would have
+/// reported.
+fn one_network_per_scan(scans: List(Fingerprint)) -> List(Fingerprint) {
+  let empty: Dict(String, Fingerprint) = dict.new()
+  let by_network =
+    list.fold(scans, empty, fn(kept, fingerprint) {
+      let key = string.lowercase(fingerprint.bssid)
+      case dict.get(kept, key) {
+        Ok(previous) ->
+          case fingerprint.rssi > previous.rssi {
+            True -> dict.insert(kept, key, fingerprint)
+            False -> kept
+          }
+        Error(_) -> dict.insert(kept, key, fingerprint)
+      }
+    })
+  dict.values(by_network)
 }
 
 /// Whether `candidate` should win over `current`.
@@ -314,18 +344,22 @@ fn lowest_samples(agreed: List(Agreed)) -> Int {
 /// the readings are then pulls the score down, and `confidence_limit` stops a
 /// thinly-mapped room from claiming full confidence off one lucky sample.
 pub fn confidence_pct(agree: Int, strain: Float, samples: Int) -> Int {
+  // The tiers are `3 or more`, not exactly 3. A scan that agrees on eight
+  // networks is stronger evidence than one that agrees on three, so it belongs
+  // in the top tier. Matching on the literal 3 sent every room above that to
+  // the one-network tier, which reported the best possible match as Medium.
   let base = case agree {
-    3 -> 95.0
+    n if n >= 3 -> 95.0
     2 -> 85.0
     _ -> 60.0
   }
   let penalty = case agree {
-    3 -> 30.0
+    n if n >= 3 -> 30.0
     2 -> 35.0
     _ -> 40.0
   }
   let lowest = case agree {
-    3 -> 20.0
+    n if n >= 3 -> 20.0
     2 -> 15.0
     _ -> 10.0
   }
