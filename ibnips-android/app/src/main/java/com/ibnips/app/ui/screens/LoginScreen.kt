@@ -87,18 +87,62 @@ fun LoginScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
+            Spacer(modifier = Modifier.height(24.dp))
+
+            OutlinedTextField(
+                value = uiState.serverUrl,
+                onValueChange = viewModel::onServerUrlChanged,
+                label = { Text("Server address") },
+                singleLine = true,
+                enabled = !signingIn,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            OutlinedButton(
+                onClick = viewModel::testConnection,
+                enabled = !signingIn && !uiState.checking,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                if (uiState.checking) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text("Testing...")
+                } else {
+                    Text("Test connection")
+                }
+            }
+
+            val note = uiState.connectionNote
+            if (note != null) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = note,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (note.startsWith("Reached")) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.error
+                    }
+                )
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
             val message = signedOutReason ?: uiState.message
             if (message != null) {
-                Spacer(modifier = Modifier.height(16.dp))
                 Text(
                     text = message,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.error,
                     textAlign = TextAlign.Center
                 )
+                Spacer(modifier = Modifier.height(12.dp))
             }
-
-            Spacer(modifier = Modifier.height(24.dp))
 
             Button(
                 onClick = { viewModel.signIn(uiState.email, accessKey) },

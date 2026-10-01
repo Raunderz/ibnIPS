@@ -149,10 +149,10 @@ class IndoorPositioningViewModel(
                 _positioningState.value = PositioningState.ERROR
                 _detail.value = outcome.message
             }
-            PositionOutcome.Unreachable -> {
+            is PositionOutcome.Unreachable -> {
                 _currentLocation.value = null
                 _positioningState.value = PositioningState.ERROR
-                _detail.value = "Cannot reach the server."
+                _detail.value = "Cannot reach the server: ${outcome.reason}"
             }
         }
     }

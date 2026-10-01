@@ -22,6 +22,7 @@ import com.ibnips.app.ui.viewmodel.IndoorPositioningViewModel
 fun IndoorPositioningScreen(
     viewModel: IndoorPositioningViewModel,
     campusViewModel: CampusViewModel,
+    onRequestPermission: () -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -132,6 +133,21 @@ fun IndoorPositioningScreen(
                     }
 
                     Spacer(modifier = Modifier.height(16.dp))
+
+                    if (state == PositioningState.PERMISSION_REQUIRED) {
+                        Text(
+                            text = "ibnIPS needs Wi-Fi and location permission to read nearby access points. Android grants nothing until you say so, and without it there is nothing to match against.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.padding(bottom = 12.dp)
+                        )
+                        OutlinedButton(
+                            onClick = onRequestPermission,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Grant permission")
+                        }
+                        Spacer(modifier = Modifier.height(16.dp))
+                    }
 
                     Button(
                         onClick = { viewModel.startPositioning() },

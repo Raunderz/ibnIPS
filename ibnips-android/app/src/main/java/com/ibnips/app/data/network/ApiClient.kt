@@ -4,9 +4,13 @@ import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
+import java.util.concurrent.TimeUnit
 
+// The backend address is a setting, not a constant, so Retrofit is rebuilt
+// whenever it changes and callers take a provider rather than an instance.
 object ApiClient {
-    private const val BASE_URL = "http://10.0.2.2:3000/"
+
+    private const val TIMEOUT_SECONDS = 10L
 
     private val logging = HttpLoggingInterceptor().apply {
         level = HttpLoggingInterceptor.Level.BODY
@@ -14,13 +18,31 @@ object ApiClient {
 
     private val httpClient = OkHttpClient.Builder()
         .addInterceptor(logging)
+        .connectTimeout(TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        .readTimeout(TIMEOUT_SECONDS, TimeUnit.SECONDS)
         .build()
 
-    private val retrofit = Retrofit.Builder()
-        .baseUrl(BASE_URL)
-        .addConverterFactory(GsonConverterFactory.create())
-        .client(httpClient)
-        .build()
+    private var currentBaseUrl: String? = null
 
-    val apiService: ApiService = retrofit.create(ApiService::class.java)
+    @Volatile
+    private var cached: ApiService? = null
+
+    fun apiServiceFor(baseUrl: String): ApiService {
+        cached?.let { if (currentBaseUrl == baseUrl) return it }
+
+        return synchronized(this) {
+            cached?.let { if (currentBaseUrl == baseUrl) return it }
+
+            val built = Retrofit.Builder()
+                .baseUrl(baseUrl)
+                .addConverterFactory(GsonConverterFactory.create())
+                .client(httpClient)
+                .build()
+                .create(ApiService::class.java)
+
+            currentBaseUrl = baseUrl
+            cached = built
+            built
+        }
+    }
 }

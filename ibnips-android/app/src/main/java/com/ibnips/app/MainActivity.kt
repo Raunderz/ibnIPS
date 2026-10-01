@@ -1,20 +1,25 @@
 package com.ibnips.app
 
+import android.content.pm.PackageManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.ibnips.app.data.model.*
 import com.ibnips.app.data.network.ApiClient
 import com.ibnips.app.data.network.AuthStore
 import com.ibnips.app.data.network.CampusNetworkAdapter
+import com.ibnips.app.data.network.ServerConfig
 import com.ibnips.app.data.repository.CampusRepository
 import com.ibnips.app.data.wifi.AndroidWifiScanner
 import com.ibnips.app.ui.components.BottomNavigationBar
@@ -46,7 +51,27 @@ fun MainAppContent(wifiScanner: AndroidWifiScanner) {
     val context = LocalContext.current
     val repository = remember { CampusRepository() }
     val authStore = remember { AuthStore(context) }
-    val networkAdapter = remember { CampusNetworkAdapter(ApiClient.apiService, repository) }
+    val serverConfig = remember { ServerConfig(context) }
+    val networkAdapter = remember {
+        CampusNetworkAdapter({ ApiClient.apiServiceFor(serverConfig.baseUrl) }, repository)
+    }
+
+    // Nothing in the app ever asked for these at runtime. On API 23+ that means
+    // `wifiManager.scanResults` throws, positioning never works, and the only
+    // symptom is a stuck screen — so ask up front.
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { }
+    val requestScanPermissions: () -> Unit = {
+        val missing = AndroidWifiScanner.requiredPermissions().filter {
+            ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED
+        }
+        if (missing.isNotEmpty()) {
+            permissionLauncher.launch(missing.toTypedArray())
+        }
+    }
+    LaunchedEffect(Unit) { requestScanPermissions() }
+
     var currentScreen by remember { mutableStateOf(Screen.Home) }
     var selectedBuildingId by remember { mutableStateOf<String?>(null) }
     var selectedFloorId by remember { mutableStateOf<String?>(null) }
@@ -72,28 +97,37 @@ fun MainAppContent(wifiScanner: AndroidWifiScanner) {
     var calibFloorId by remember { mutableStateOf("") }
     var calibDisplayName by remember { mutableStateOf("") }
     
-    val authViewModel: AuthViewModel = viewModel(
-        factory = AuthViewModelFactory(networkAdapter, authStore)
-    )
+    // Factories are remembered so they are not reallocated on every
+    // recomposition. `viewModel()` keys off the store, not the factory, so a
+    // fresh factory per frame was wasted work rather than a correctness bug.
+    val authFactory = remember(networkAdapter, authStore, serverConfig) {
+        AuthViewModelFactory(networkAdapter, authStore, serverConfig)
+    }
+    val campusFactory = remember(repository, networkAdapter) {
+        CampusViewModelFactory(repository, networkAdapter)
+    }
+
+    val authViewModel: AuthViewModel = viewModel(factory = authFactory)
     val authState by authViewModel.uiState.collectAsState()
 
-    val viewModel: CampusViewModel = viewModel(
-        factory = CampusViewModelFactory(repository, networkAdapter)
-    )
+    val viewModel: CampusViewModel = viewModel(factory = campusFactory)
     val wifiScannerViewModel: WifiScannerViewModel = viewModel(
-        factory = WifiScannerViewModelFactory(wifiScanner)
+        factory = remember(wifiScanner) { WifiScannerViewModelFactory(wifiScanner) }
     )
-    val positioningViewModel: IndoorPositioningViewModel = viewModel(
-        factory = IndoorPositioningViewModelFactory(
+
+    val positioningFactory = remember(viewModel, wifiScanner, networkAdapter, authViewModel) {
+        IndoorPositioningViewModelFactory(
             campusViewModel = viewModel,
             wifiScanner = wifiScanner,
             networkAdapter = networkAdapter,
             authToken = { authViewModel.token },
             onUnauthorized = { reason -> authViewModel.signOut(reason) }
         )
-    )
+    }
+
+    val positioningViewModel: IndoorPositioningViewModel = viewModel(factory = positioningFactory)
     val navigationViewModel: NavigationViewModel = viewModel(
-        factory = NavigationViewModelFactory(viewModel)
+        factory = remember(viewModel) { NavigationViewModelFactory(viewModel) }
     )
 
     // Every authenticated screen is behind this, so the whole app waits on a
@@ -363,6 +397,7 @@ fun MainAppContent(wifiScanner: AndroidWifiScanner) {
                 IndoorPositioningScreen(
                     viewModel = positioningViewModel,
                     campusViewModel = viewModel,
+                    onRequestPermission = requestScanPermissions,
                     onBack = {
                         currentScreen = Screen.Home
                         positioningViewModel.reset()
