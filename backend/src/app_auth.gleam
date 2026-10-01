@@ -10,6 +10,9 @@
 
 import birl
 import db_query
+import env
+import gleam/bit_array
+import gleam/crypto
 import gleam/dynamic/decode
 import gleam/http/request
 import gleam/json
@@ -19,9 +22,35 @@ import models.{type AuthRequest, ErrorResponse}
 import sqlight
 import wisp
 
-// --- Domain Validation ---
+// --- Access Key Validation ---
 
-/// Check if the email ends with `@kiit.ac.in` (case-insensitive).
+/// Whether the supplied key matches the one from `AUTH_KEY`.
+///
+/// Compared in constant time so that a caller cannot discover the key one
+/// character at a time by timing how long the rejection takes.
+///
+/// `expected` is `Error` when `AUTH_KEY` is unset. That rejects every login
+/// rather than accepting every login: a server with no key configured must not
+/// hand out tokens to whoever asks.
+pub fn is_valid_access_key(
+  supplied: String,
+  expected: Result(String, String),
+) -> Bool {
+  case expected {
+    Error(_) -> False
+    Ok(expected_key) ->
+      crypto.secure_compare(
+        bit_array.from_string(supplied),
+        bit_array.from_string(expected_key),
+      )
+  }
+}
+
+/// Check the email is `something@kiit.ac.in`.
+///
+/// Case-insensitive, and the domain check and the split are done on the same
+/// lower-cased value — otherwise `23B1234@KIIT.AC.IN` passes the domain check
+/// and then fails the split.
 fn is_valid_email(email: String) -> Bool {
   string.ends_with(string.lowercase(email), "@kiit.ac.in")
 }
@@ -29,9 +58,16 @@ fn is_valid_email(email: String) -> Bool {
 /// Extract the roll number from an email.
 ///
 /// `"23b1234@kiit.ac.in"` -> `Ok("23b1234")`
+///
+/// Rejects an empty roll number, which would otherwise become a user whose id
+/// is the empty string.
 fn extract_roll_number(email: String) -> Result(String, String) {
   case string.split(email, "@") {
-    [roll_no, "kiit.ac.in"] -> Ok(roll_no)
+    [roll_no, "kiit.ac.in"] ->
+      case roll_no == "" {
+        True -> Error("Invalid email format: must be roll_no@kiit.ac.in")
+        False -> Ok(roll_no)
+      }
     _ -> Error("Invalid email format: must be roll_no@kiit.ac.in")
   }
 }
@@ -44,17 +80,24 @@ fn generate_session_id() -> String {
   wisp.random_string(64)
 }
 
+/// How long a token stays valid, in seconds. 24 hours.
+const session_length_seconds: Int = 86_400
+
 /// Create a new JWT for a user.
 /// - sub: roll number
 /// - sid: session_id (stored in DB)
 /// - iat: now
-/// - exp: now + 24 hours (86,400 seconds)
+/// - exp: now + 24 hours
 fn create_jwt(user_id: String, session_id: String, secret: String) -> String {
   let now = birl.to_unix(birl.now())
-  let expires = now + 86_400
-  // 24 hours in seconds
 
-  let claims = Claims(sub: user_id, sid: session_id, iat: now, exp: expires)
+  let claims =
+    Claims(
+      sub: user_id,
+      sid: session_id,
+      iat: now,
+      exp: now + session_length_seconds,
+    )
 
   jwt.sign(claims, secret)
 }
@@ -123,6 +166,34 @@ fn validate_session(
   }
 }
 
+/// Delete a session row, revoking the token that carries it.
+fn delete_session(
+  conn: sqlight.Connection,
+  session_id: String,
+) -> Result(Nil, String) {
+  db_query.exec_with_args(
+    "DELETE FROM sessions WHERE session_id = ?",
+    on: conn,
+    with: [sqlight.text(session_id)],
+  )
+}
+
+/// Remove sessions that have already expired.
+///
+/// Called after each successful login. Expired rows cannot be used to
+/// authenticate anything — `validate_session` rejects them — but without this
+/// the table grows without bound. Errors are ignored: housekeeping must never
+/// fail a login.
+fn purge_expired_sessions(conn: sqlight.Connection) -> Nil {
+  let _ =
+    db_query.exec_with_args(
+      "DELETE FROM sessions WHERE expires_at <= unixepoch()",
+      on: conn,
+      with: [],
+    )
+  Nil
+}
+
 // --- Request Parsing ---
 
 /// Parse JSON body into AuthRequest.
@@ -136,17 +207,18 @@ fn parse_auth_body(body: String) -> Result(AuthRequest, Nil) {
 // --- Public Handler: POST /api/auth ---
 
 /// POST /api/auth
-/// Request: {"email": "23b1234@kiit.ac.in"}
+/// Request: {"email": "23b1234@kiit.ac.in", "access_key": "..."}
 /// Response: {"token": "<jwt>", "user_id": "23b1234"}
 ///
 /// Steps:
 /// 1. Parse JSON body
-/// 2. Validate email domain
-/// 3. Extract roll number
-/// 4. Upsert user in DB
-/// 5. Generate session
-/// 6. Sign JWT
-/// 7. Return token + user_id
+/// 2. Check the access key against `AUTH_KEY`
+/// 3. Validate email domain
+/// 4. Extract roll number
+/// 5. Upsert user in DB
+/// 6. Generate session
+/// 7. Sign JWT
+/// 8. Return token + user_id
 pub fn handle_auth(
   request: wisp.Request,
   conn: sqlight.Connection,
@@ -155,91 +227,95 @@ pub fn handle_auth(
   use body <- wisp.require_string_body(request)
 
   case parse_auth_body(body) {
-    Error(_) -> {
-      let error_json =
-        models.encode_error(ErrorResponse(
-          "invalid_json",
-          "Could not parse request body",
-        ))
-      wisp.bad_request("invalid_json")
-      |> wisp.string_body(json.to_string(error_json))
-    }
-    Ok(auth_req) -> {
-      case is_valid_email(auth_req.email) {
-        False -> {
-          let error_json =
-            models.encode_error(ErrorResponse(
-              "unauthorized",
-              "Email must end with @kiit.ac.in",
-            ))
-          wisp.response(403)
-          |> wisp.string_body(json.to_string(error_json))
-        }
-        True -> {
-          case extract_roll_number(auth_req.email) {
-            Error(msg) -> {
-              let error_json =
-                models.encode_error(ErrorResponse("invalid_email", msg))
-              wisp.bad_request("invalid_email")
-              |> wisp.string_body(json.to_string(error_json))
-            }
-            Ok(user_id) -> {
-              // Upsert user (track that they logged in).
-              case upsert_user(conn, user_id, auth_req.email) {
-                Error(msg) -> {
-                  let error_json =
-                    models.encode_error(ErrorResponse("database_error", msg))
-                  wisp.response(500)
-                  |> wisp.string_body(json.to_string(error_json))
-                }
-                Ok(Nil) -> {
-                  // Create session.
-                  let session_id = generate_session_id()
-                  let now = birl.to_unix(birl.now())
-                  let expires = now + 86_400
+    Error(_) -> error(400, "invalid_json", "Could not parse request body")
+    Ok(auth_req) -> check_access_key(auth_req, conn, jwt_secret)
+  }
+}
 
-                  case insert_session(conn, session_id, user_id, expires) {
-                    Error(msg) -> {
-                      let error_json =
-                        models.encode_error(ErrorResponse("database_error", msg))
-                      wisp.response(500)
-                      |> wisp.string_body(json.to_string(error_json))
-                    }
-                    Ok(Nil) -> {
-                      // Sign JWT and return.
-                      let token = create_jwt(user_id, session_id, jwt_secret)
+/// Reject the request unless it carries the shared access key.
+///
+/// The key is checked before the email, so a wrong key gives the same answer
+/// whatever email was sent with it. Otherwise the response would confirm which
+/// addresses are real.
+fn check_access_key(
+  auth_req: AuthRequest,
+  conn: sqlight.Connection,
+  jwt_secret: String,
+) -> wisp.Response {
+  case is_valid_access_key(auth_req.access_key, env.auth_key()) {
+    False -> error(401, "unauthorized", "Invalid or missing access key")
+    True -> check_email(auth_req, conn, jwt_secret)
+  }
+}
 
-                      let resp_json =
-                        json.object([
-                          #("token", json.string(token)),
-                          #("user_id", json.string(user_id)),
-                        ])
+/// Check the email is an institutional one and turn it into a user id.
+fn check_email(
+  auth_req: AuthRequest,
+  conn: sqlight.Connection,
+  jwt_secret: String,
+) -> wisp.Response {
+  case is_valid_email(auth_req.email) {
+    False -> error(403, "unauthorized", "Email must end with @kiit.ac.in")
+    True ->
+      case extract_roll_number(string.lowercase(auth_req.email)) {
+        Error(msg) -> error(400, "invalid_email", msg)
+        Ok(user_id) -> create_session(conn, jwt_secret, user_id, auth_req)
+      }
+  }
+}
 
-                      wisp.ok()
-                      |> wisp.string_body(json.to_string(resp_json))
-                    }
-                  }
-                }
-              }
-            }
-          }
+/// Record the user and their new session, then sign and return a token.
+fn create_session(
+  conn: sqlight.Connection,
+  jwt_secret: String,
+  user_id: String,
+  auth_req: AuthRequest,
+) -> wisp.Response {
+  case upsert_user(conn, user_id, auth_req.email) {
+    Error(msg) -> error(500, "database_error", msg)
+    Ok(Nil) -> {
+      let session_id = generate_session_id()
+      let expires = birl.to_unix(birl.now()) + session_length_seconds
+
+      case insert_session(conn, session_id, user_id, expires) {
+        Error(msg) -> error(500, "database_error", msg)
+        Ok(Nil) -> {
+          // Housekeeping: drop sessions that have expired.
+          purge_expired_sessions(conn)
+
+          let token = create_jwt(user_id, session_id, jwt_secret)
+          let resp_json =
+            json.object([
+              #("token", json.string(token)),
+              #("user_id", json.string(user_id)),
+            ])
+
+          wisp.ok()
+          |> wisp.json_body(json.to_string(resp_json))
         }
       }
     }
   }
 }
 
+/// Build the standard error response.
+fn error(status: Int, code: String, details: String) -> wisp.Response {
+  let error_json = models.encode_error(ErrorResponse(code, details))
+  wisp.response(status)
+  |> wisp.string_body(json.to_string(error_json))
+}
+
 // --- Middleware: Validate Bearer Token ---
 
 /// Extract and verify JWT from Authorization header.
-/// Returns Ok(user_id) if valid, Error(response) if not.
+/// Returns `Ok(#(user_id, session_id))` if valid, `Error(response)` if not.
 ///
-/// This is used by require_auth below.
+/// This is used by require_auth and handle_logout below.
 fn validate_token(
   req: wisp.Request,
   conn: sqlight.Connection,
   jwt_secret: String,
-) -> Result(String, wisp.Response) {
+) -> Result(#(String, String), wisp.Response) {
   case request.get_header(req, "authorization") {
     Error(Nil) -> {
       let error_json =
@@ -279,7 +355,7 @@ fn validate_token(
                     |> wisp.string_body(json.to_string(error_json)),
                   )
                 }
-                Ok(user_id) -> Ok(user_id)
+                Ok(user_id) -> Ok(#(user_id, claims.sid))
               }
             }
           }
@@ -314,6 +390,37 @@ pub fn require_auth(
 ) -> wisp.Response {
   case validate_token(request, conn, jwt_secret) {
     Error(response) -> response
-    Ok(user_id) -> handler(user_id)
+    Ok(#(user_id, _session_id)) -> handler(user_id)
+  }
+}
+
+/// POST /api/auth/logout
+///
+/// Deletes the caller's session row. The token itself stays cryptographically
+/// valid until it expires, but every protected route re-checks the `sid` claim
+/// against the `sessions` table, so a revoked token stops working immediately.
+///
+/// Returns `{"status":"logged_out"}`.
+pub fn handle_logout(
+  request: wisp.Request,
+  conn: sqlight.Connection,
+  jwt_secret: String,
+) -> wisp.Response {
+  case validate_token(request, conn, jwt_secret) {
+    Error(response) -> response
+    Ok(#(_user_id, session_id)) ->
+      case delete_session(conn, session_id) {
+        Error(msg) -> {
+          let error_json =
+            models.encode_error(ErrorResponse("database_error", msg))
+          wisp.response(500)
+          |> wisp.json_body(json.to_string(error_json))
+        }
+        Ok(Nil) -> {
+          let resp_json = json.object([#("status", json.string("logged_out"))])
+          wisp.ok()
+          |> wisp.json_body(json.to_string(resp_json))
+        }
+      }
   }
 }
