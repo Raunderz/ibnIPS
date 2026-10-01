@@ -66,15 +66,18 @@ Read from OS env first, then a `.env` file in the working directory (supports `#
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `JWT_SECRET` | Yes (prod) | HS256 signing secret. Falls back to a hardcoded dev value if unset. |
+| `JWT_SECRET` | **Always** | HS256 signing secret, min 32 chars. **The server refuses to start without it** — there is no fallback, since a key committed to this repo would let anyone forge tokens. |
 | `PORT` | No | Listen port (default `3000`) |
+| `DB_PATH` | Yes (prod) | SQLite file path (default `icps.db` in the working directory). **Set this on Render** (`/tmp/icps.db`) — the working directory is read-only there, so the default fails to open. |
 | `MAP_JSON_URL` | Yes (prod) | Remote URL for `GET /api/map`. Set in Render (or local `.env`). `map.json` is gitignored. |
 
-Example `.env`:
+Example `.env` (generate the secret — don't invent one):
 
 ```env
-JWT_SECRET=change_me_in_production
-# set MAP_JSON_URL in Render env (or local .env) — map.json is not in git
+# openssl rand -hex 32
+JWT_SECRET=<paste the generated value here>
+# MAP_JSON_URL in Render env (or local .env) — map.json is not in git
+DB_PATH=/tmp/icps.db
 ```
 
 ### API
@@ -83,10 +86,27 @@ JWT_SECRET=change_me_in_production
 |--------|------|------|-------------|
 | `GET` | `/` | No | Health check |
 | `POST` | `/api/auth` | No | Issue JWT (`@kiit.ac.in` email; roll number becomes `user_id`) |
+| `POST` | `/api/auth/logout` | Yes | Revoke the caller's session immediately |
 | `POST` | `/api/ping` | Yes | Tag a room with Wi-Fi fingerprints |
 | `GET` | `/api/nodes` | No | List all nodes |
 | `GET` | `/api/map` | No | Full graph from `MAP_JSON_URL` (or local fallback `map.json`) |
-| `GET` | `/api/db/download` | No | **Dev-only:** download `icps.db` — disable in production |
+
+### Request Limits
+
+Applied server-side to every `/api/*` route; `GET /` is exempt so uptime
+monitors are never throttled.
+
+| Limit | Value | Response when exceeded |
+|-------|-------|------------------------|
+| Requests per client | 60 per 60s window, keyed on left-most `x-forwarded-for` | `429 {"error":"rate_limited"}` |
+| Request body | 64 KiB | `413` |
+| Fingerprints per ping | 200 | `400 validation_failed` |
+| Room name | 100 characters | `400 validation_failed` |
+| Steps between rooms | 1–1000 | `400 validation_failed` |
+
+`previous_node_id` must name a room that exists; otherwise `400
+unknown_previous_node`. Ping writes run in one transaction on a per-request
+connection, so a failure leaves no partial room or edge behind.
 
 Full API docs: [`backend/schema.md`](backend/schema.md). Backend details: [`backend/README.md`](backend/README.md).
 
@@ -172,7 +192,7 @@ Treat `lite_app` + `backend` as source of truth for behavior and API contracts.
 ## Deployment
 
 - Backend: port `3000` (or `$PORT`), needs `JWT_SECRET` + `MAP_JSON_URL` in production; current deploy target `https://ibnips.onrender.com`
-- Disable or gate `GET /api/db/download` in production
+- `JWT_SECRET` must be set before deploy — the service crash-loops without it by design
 - Docker image available (`backend/Dockerfile`); no docker-compose in-repo
 - lite_app builds to APK for Android distribution
 

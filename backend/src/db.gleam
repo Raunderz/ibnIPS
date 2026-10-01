@@ -1,15 +1,46 @@
+import env
 import gleam/result
 import sqlight
 
-const db_path = "icps.db"
+/// Open the SQLite database with the pragmas the app depends on.
+///
+/// SQLite defaults to `PRAGMA foreign_keys = OFF`, and the setting is
+/// per-connection rather than persisted in the file. Without this the
+/// `FOREIGN KEY` constraints declared in the schema are silently ignored, so
+/// `edges` can reference nodes that do not exist. `busy_timeout` makes a
+/// concurrent writer wait for the write lock instead of failing immediately.
+fn apply_pragmas(conn: sqlight.Connection) -> Result(Nil, sqlight.Error) {
+  use _ <- result.try(sqlight.exec("PRAGMA foreign_keys = ON;", conn))
+  use _ <- result.try(sqlight.exec("PRAGMA busy_timeout = 5000;", conn))
+  // Best effort: WAL needs filesystem shared-memory support, which is not
+  // available on every network filesystem.
+  let _ = sqlight.exec("PRAGMA journal_mode = WAL;", conn)
+  Ok(Nil)
+}
+
+/// Open a connection to the configured database path, creating it if missing.
+///
+/// Migrations are *not* run — see `init` for the startup path and
+/// `with_connection` for request-scoped connections.
+pub fn open() -> Result(sqlight.Connection, sqlight.Error) {
+  case sqlight.open("file:" <> env.db_path() <> "?mode=rwc") {
+    Error(e) -> Error(e)
+    Ok(conn) ->
+      case apply_pragmas(conn) {
+        Ok(Nil) -> Ok(conn)
+        Error(e) -> {
+          let _ = sqlight.close(conn)
+          Error(e)
+        }
+      }
+  }
+}
 
 /// Open the SQLite database (creating it if missing) and run migrations.
 pub fn init() -> Result(sqlight.Connection, sqlight.Error) {
-  case sqlight.open("file:" <> db_path <> "?mode=rwc") {
+  case open() {
     Error(e) -> Error(e)
-    Ok(conn) -> {
-      // Run all CREATE TABLE statements.
-      // If any fail, close the connection and return the error.
+    Ok(conn) ->
       case run_migrations(conn) {
         Error(e) -> {
           let _ = sqlight.close(conn)
@@ -17,6 +48,24 @@ pub fn init() -> Result(sqlight.Connection, sqlight.Error) {
         }
         Ok(Nil) -> Ok(conn)
       }
+  }
+}
+
+/// Run `fun` against a dedicated connection, then close it.
+///
+/// Write paths use their own connection so a transaction opened inside `fun`
+/// cannot interleave with another request's transaction. Sharing one connection
+/// across all mist handler processes would let request B's `COMMIT` close
+/// request A's still-open transaction.
+pub fn with_connection(
+  fun: fn(sqlight.Connection) -> a,
+) -> Result(a, sqlight.Error) {
+  case open() {
+    Error(e) -> Error(e)
+    Ok(conn) -> {
+      let result = fun(conn)
+      let _ = sqlight.close(conn)
+      Ok(result)
     }
   }
 }

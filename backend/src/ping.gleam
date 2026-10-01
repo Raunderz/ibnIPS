@@ -1,12 +1,14 @@
 // ping.gleam
 // POST /api/ping — tag a room with Wi-Fi fingerprints and edge data.
 
+import db
 import db_query
 import gleam/dynamic/decode
 import gleam/int
 import gleam/io
 import gleam/json
 import gleam/list
+import gleam/result
 import gleam/string
 import models.{
   type Fingerprint, type PingRequest, ErrorResponse, Fingerprint, PingRequest,
@@ -15,18 +17,37 @@ import models.{
 import sqlight
 import wisp
 
+/// Largest number of Wi-Fi readings accepted in one request. A typical scan
+/// sees well under 50; this stops a single request inserting unbounded rows.
+pub const max_fingerprints: Int = 200
+
+/// Longest accepted room name.
+const max_name_length: Int = 100
+
+/// Largest accepted step count between two rooms.
+const max_steps: Int = 1000
+
+/// Why a ping could not be processed.
+type PingError {
+  /// `previous_node_id` does not identify a known room.
+  UnknownPreviousNode(String)
+  /// Anything else from the database.
+  Database(String)
+}
+
 /// Handle a ping request: create or reuse the tagged room, store its Wi-Fi
 /// fingerprints, and link it to the previous room via an edge.
 ///
 /// Auth is enforced upstream in `backend.handle_request` via
 /// `app_auth.require_auth`.
 ///
+/// Writes run in a transaction on a connection dedicated to this request, so a
+/// failure part-way through cannot leave a node without its fingerprints or an
+/// edge pointing at a room that was never created.
+///
 /// Returns `200` with `{"status":"created","node_id":...}` on success, or an
-/// error response (400/401/500) on failure.
-pub fn handle(
-  request: wisp.Request,
-  conn: sqlight.Connection,
-) -> wisp.Response {
+/// error response (400/500) on failure.
+pub fn handle(request: wisp.Request) -> wisp.Response {
   use body <- wisp.require_string_body(request)
 
   case parse_ping_body(body) {
@@ -46,27 +67,107 @@ pub fn handle(
           wisp.bad_request("validation_failed")
           |> wisp.string_body(json.to_string(error_json))
         }
-        Ok(_) -> {
-          case process_ping(conn, ping) {
-            Error(msg) -> {
+        Ok(_) ->
+          case db.with_connection(fn(conn) { process_ping(conn, ping) }) {
+            Error(_) -> {
               let error_json =
-                encode_error(ErrorResponse("database_error", msg))
+                encode_error(ErrorResponse(
+                  "database_error",
+                  "Could not open the database",
+                ))
               wisp.response(500)
               |> wisp.string_body(json.to_string(error_json))
             }
-            Ok(node_id) -> {
+            Ok(Ok(node_id)) -> {
               let resp_json =
                 json.object([
                   #("status", json.string("created")),
                   #("node_id", json.string(node_id)),
                 ])
               wisp.ok()
-              |> wisp.string_body(json.to_string(resp_json))
+              |> wisp.json_body(json.to_string(resp_json))
+            }
+            Ok(Error(UnknownPreviousNode(id))) -> {
+              let error_json =
+                encode_error(ErrorResponse(
+                  "unknown_previous_node",
+                  "No room with node_id "
+                    <> id
+                    <> ". Tag that room first, or send an empty "
+                    <> "previous_node_id to start a new chain.",
+                ))
+              wisp.bad_request("unknown_previous_node")
+              |> wisp.string_body(json.to_string(error_json))
+            }
+            Ok(Error(Database(msg))) -> {
+              let error_json =
+                encode_error(ErrorResponse("database_error", msg))
+              wisp.response(500)
+              |> wisp.string_body(json.to_string(error_json))
             }
           }
-        }
       }
     }
+  }
+}
+
+/// Validate the shape and size of a ping request.
+///
+/// First room (`previous_node_id == ""`): `steps` must be `-1` and
+/// `direction` must be `""`.
+///
+/// Linked room (non-empty `previous_node_id`): `steps` must be `> 0` and
+/// `direction` one of `N, NE, E, SE, S, SW, W, NW`.
+///
+/// Also caps the name length, step count and number of fingerprints so a single
+/// request cannot write an unbounded number of rows.
+pub fn validate_ping(ping: PingRequest) -> Result(Nil, String) {
+  let valid_directions = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
+
+  case string.length(ping.name) > max_name_length {
+    True ->
+      Error(
+        "Room name is too long (max "
+        <> int.to_string(max_name_length)
+        <> " characters)",
+      )
+    False ->
+      case list.length(ping.fingerprints) > max_fingerprints {
+        True ->
+          Error(
+            "Too many fingerprints in one request (max "
+            <> int.to_string(max_fingerprints)
+            <> ")",
+          )
+        False ->
+          case ping.previous_node_id {
+            "" -> {
+              case ping.steps == -1 && ping.direction == "" {
+                True -> Ok(Nil)
+                False -> Error("First room must have null steps and direction")
+              }
+            }
+            _ -> {
+              case ping.steps <= 0 || ping.steps > max_steps {
+                True ->
+                  Error(
+                    "Steps must be between 1 and "
+                    <> int.to_string(max_steps)
+                    <> " for a linked room",
+                  )
+                False -> {
+                  case list.contains(valid_directions, ping.direction) {
+                    False ->
+                      Error(
+                        "Direction must be one of: N, NE, E, SE, S, SW, W, NW",
+                      )
+                    True -> Ok(Nil)
+                  }
+                }
+              }
+            }
+          }
+      }
   }
 }
 
@@ -78,90 +179,86 @@ fn parse_ping_body(body: String) -> Result(PingRequest, Nil) {
   }
 }
 
-/// Validate `steps`/`direction` based on whether this is the first room.
+/// Reuse an existing node (same name + floor) or create a new one, then store
+/// its fingerprints and link it to the previous node.
 ///
-/// First room (`previous_node_id == ""`): `steps` must be `-1` and
-/// `direction` must be `""`.
-///
-/// Linked room (non-empty `previous_node_id`): `steps` must be `> 0` and
-/// `direction` one of `N, NE, E, SE, S, SW, W, NW`.
-fn validate_ping(ping: PingRequest) -> Result(Nil, String) {
-  let valid_directions = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
-
-  case ping.previous_node_id {
-    "" -> {
-      case ping.steps == -1 && ping.direction == "" {
-        True -> Ok(Nil)
-        False -> Error("First room must have null steps and direction")
-      }
-    }
-    _ -> {
-      case ping.steps > 0 {
-        True -> {
-          case list.contains(valid_directions, ping.direction) {
-            False ->
-              Error("Direction must be one of: N, NE, E, SE, S, SW, W, NW")
-            True -> Ok(Nil)
-          }
-        }
-        False -> Error("Steps must be positive for non-first room")
-      }
-    }
-  }
-}
-
-/// Reuse an existing node (same name + floor) or create a new one, then
-/// store fingerprints and link to the previous node.
-///
-/// Returns the node_id of the tagged room.
+/// All three writes run in one transaction, so a failure part-way through
+/// leaves the room and its edges unchanged rather than half-written.
 fn process_ping(
   conn: sqlight.Connection,
   ping: PingRequest,
-) -> Result(String, String) {
+) -> Result(String, PingError) {
+  db_query.transaction(conn, to_ping_error, fn() {
+    use node_id <- result.try(resolve_node(conn, ping))
+    use Nil <- result.try(
+      tag_db_error(insert_fingerprints(conn, node_id, ping.fingerprints)),
+    )
+    use node_id <- result.try(link_or_return(conn, node_id, ping))
+    Ok(node_id)
+  })
+}
+
+/// Errors raised by the transaction itself rather than by a query in it.
+fn to_ping_error(msg: String) -> PingError {
+  Database(msg)
+}
+
+/// Give a plain query error the error type the transaction carries.
+fn tag_db_error(result: Result(a, String)) -> Result(a, PingError) {
+  case result {
+    Ok(value) -> Ok(value)
+    Error(msg) -> Error(Database(msg))
+  }
+}
+
+/// Return the id of the room named by this ping, creating the row if needed.
+///
+/// `BEGIN IMMEDIATE` in `db_query.transaction` already holds the write lock, so
+/// the lookup-then-insert here cannot race another request for the same room.
+fn resolve_node(
+  conn: sqlight.Connection,
+  ping: PingRequest,
+) -> Result(String, PingError) {
   case find_node_by_name(conn, ping.name, ping.floor) {
-    Ok(existing_id) -> {
-      case insert_fingerprints(conn, existing_id, ping.fingerprints) {
-        Error(msg) -> Error(msg)
-        Ok(Nil) -> link_or_return(conn, existing_id, ping)
-      }
-    }
+    Ok(existing_id) -> Ok(existing_id)
     Error(_) -> {
       let node_id = generate_node_id(ping.name, ping.floor)
       case insert_node(conn, node_id, ping.name, ping.floor) {
-        Error(msg) -> Error(msg)
-        Ok(Nil) -> {
-          case insert_fingerprints(conn, node_id, ping.fingerprints) {
-            Error(msg) -> Error(msg)
-            Ok(Nil) -> link_or_return(conn, node_id, ping)
-          }
-        }
+        Error(msg) -> Error(Database(msg))
+        Ok(Nil) -> Ok(node_id)
       }
     }
   }
 }
 
 /// Link `node_id` to the previous node, unless this is the first room.
+///
+/// Checks that `previous_node_id` names a room that exists, so a client cannot
+/// build edges pointing at nodes that were never tagged.
 fn link_or_return(
   conn: sqlight.Connection,
   node_id: String,
   ping: PingRequest,
-) -> Result(String, String) {
+) -> Result(String, PingError) {
   case ping.previous_node_id {
     "" -> Ok(node_id)
-    _ -> {
-      case
-        insert_edge(
-          conn,
-          ping.previous_node_id,
-          node_id,
-          ping.steps,
-          ping.direction,
-        )
-      {
-        Ok(Nil) -> Ok(node_id)
-        Error(msg) -> Error(msg)
+    _ ->
+      case node_exists(conn, ping.previous_node_id) {
+        False -> Error(UnknownPreviousNode(ping.previous_node_id))
+        True ->
+          case
+            insert_edge(
+              conn,
+              ping.previous_node_id,
+              node_id,
+              ping.steps,
+              ping.direction,
+            )
+          {
+            Ok(Nil) -> Ok(node_id)
+            Error(msg) -> Error(Database(msg))
+          }
       }
-    }
   }
 }
 
@@ -252,7 +349,31 @@ fn insert_node(
   )
 }
 
+/// Whether a node with this id exists.
+fn node_exists(conn: sqlight.Connection, node_id: String) -> Bool {
+  let sql = "SELECT node_id FROM nodes WHERE node_id = ?"
+  let decoder = {
+    use node_id <- decode.field("node_id", decode.string)
+    decode.success(node_id)
+  }
+  case
+    db_query.query_as_maps(
+      sql,
+      on: conn,
+      with: [sqlight.text(node_id)],
+      expecting: decoder,
+    )
+  {
+    Ok([_]) -> True
+    Ok(_) -> False
+    Error(_) -> False
+  }
+}
+
 /// Insert all fingerprints for a node.
+///
+/// Runs inside the caller's transaction, so a failure rolls back the node and
+/// edge rows written alongside it.
 fn insert_fingerprints(
   conn: sqlight.Connection,
   node_id: String,
@@ -274,8 +395,8 @@ fn insert_fingerprints(
 
 /// Insert an edge between two nodes.
 ///
-/// Duplicate edges (same from_node + to_node) are ignored, since the
-/// `UNIQUE(from_node, to_node)` constraint is the only expected error here.
+/// Re-tagging the same pair of rooms is a normal thing for a client to do, so a
+/// duplicate edge is treated as success rather than an error.
 fn insert_edge(
   conn: sqlight.Connection,
   from_node: String,
@@ -283,23 +404,12 @@ fn insert_edge(
   steps: Int,
   direction: String,
 ) -> Result(Nil, String) {
-  case
-    db_query.exec_with_args(
-      "INSERT INTO edges (from_node, to_node, steps, direction) VALUES (?, ?, ?, ?)",
-      on: conn,
-      with: [
-        sqlight.text(from_node),
-        sqlight.text(to_node),
-        sqlight.int(steps),
-        sqlight.text(direction),
-      ],
-    )
-  {
-    Ok(Nil) -> Ok(Nil)
-    Error(msg) ->
-      case string.contains(msg, "UNIQUE") {
-        True -> Ok(Nil)
-        False -> Error(msg)
-      }
-  }
+  let sql =
+    "INSERT OR IGNORE INTO edges (from_node, to_node, steps, direction) VALUES (?, ?, ?, ?)"
+  db_query.exec_with_args(sql, on: conn, with: [
+    sqlight.text(from_node),
+    sqlight.text(to_node),
+    sqlight.int(steps),
+    sqlight.text(direction),
+  ])
 }

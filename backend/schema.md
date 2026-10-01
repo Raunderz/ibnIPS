@@ -10,6 +10,7 @@ always `application/json`. Auth uses a bearer token in the `Authorization` heade
 ## Table of Contents
 
 - [Auth](#auth)
+- [Logout](#logout)
 - [Ping (tag a room)](#ping)
 - [Get Nodes](#get-nodes)
 - [Get Map](#get-map)
@@ -54,6 +55,35 @@ Generate an auth token. The email **must** end with `@kiit.ac.in`.
 | `403` | `{"error":"unauthorized","details":"Email must end with @kiit.ac.in"}` |
 | `400` | `{"error":"invalid_email","details":"Invalid email format: must be roll_no@kiit.ac.in"}` |
 | `400` | `{"error":"invalid_json","details":"Could not parse request body"}` |
+
+---
+
+## Logout
+
+### `POST /api/auth/logout` (auth required)
+
+Revokes the caller's session. The token itself stays cryptographically valid
+until `exp`, but every protected route re-checks the `sid` claim against the
+`sessions` table, so a revoked token stops working immediately.
+
+**Headers**: `Authorization: Bearer <token>`
+
+**200 OK**
+
+```json
+{ "status": "logged_out" }
+```
+
+**Errors**
+
+| Status | Body |
+|--------|------|
+| `401` | `{"error":"unauthorized","details":"Invalid or missing token"}` or `"Session expired or not found"` |
+| `429` | `{"error":"rate_limited",...}` |
+| `500` | `{"error":"database_error","details":"<msg>"}` |
+
+> Expired sessions are purged from the `sessions` table on each successful
+> login, so the table does not grow without bound.
 
 ---
 
@@ -113,7 +143,15 @@ previous node via an edge. Sends the token as `Authorization: Bearer <token>`.
 | `401` | `{"error":"unauthorized","details":"Invalid or missing token"}` |
 | `400` | `{"error":"invalid_json","details":"Could not parse ping request"}` |
 | `400` | `{"error":"validation_failed","details":"<msg>"}` (see [validation rules](#validation-rules)) |
+| `400` | `{"error":"unknown_previous_node","details":"No room with node_id ..."}` |
+| `413` | Request body larger than 64 KiB (empty body) |
+| `429` | `{"error":"rate_limited","details":"Too many requests. Try again later."}` |
 | `500` | `{"error":"database_error","details":"<msg>"}` |
+
+> **Atomicity:** the node, its fingerprints and its edge are written in one
+> transaction on a connection dedicated to the request. A failure — including a
+> rejected `previous_node_id` — rolls the whole thing back, so a `400` never
+> leaves a half-written room behind.
 
 ---
 
@@ -225,6 +263,17 @@ Rules for `steps` and `direction` depend on whether the node is the first room:
 | Linked | `"lab_201_f2"` | `15` | `"N"` | ok |
 | Linked | `"lab_201_f2"` | `-1` | `""` | `400` |
 | Linked | `"lab_201_f2"` | `10` | `"UP"` | `400` |
+| Linked | `"lab_201_f2"` | `0` | `"N"` | `400` |
+| Linked | `"lab_201_f2"` | `100000` | `"N"` | `400` |
+
+**Size limits** (also `400 validation_failed`):
+
+| Field | Limit |
+|-------|-------|
+| `name` | 100 characters |
+| `steps` | 1–1000 for a linked room |
+| `fingerprints` | 200 readings per request |
+| request body | 64 KiB (`413` rather than `400`) |
 
 ---
 
@@ -244,8 +293,20 @@ All errors share the same shape:
 | `invalid_json` | Body was not valid JSON / missing required fields |
 | `invalid_email` | Email did not match the `roll_no@kiit.ac.in` format |
 | `unauthorized` | Bad email domain, or invalid/missing bearer token |
-| `validation_failed` | `steps`/`direction` violated [validation rules](#validation-rules) |
+| `validation_failed` | A field violated the [validation rules](#validation-rules) |
+| `unknown_previous_node` | `previous_node_id` does not name an existing room |
+| `rate_limited` | Over the per-client request quota (60 per 60s) |
 | `database_error` | SQL/DB failure |
+
+## Rate Limiting
+
+Every `/api/*` route is limited to **60 requests per 60-second window**, keyed on
+the left-most `x-forwarded-for` entry. Over the quota returns `429`. `GET /` is
+exempt so uptime monitors are not throttled.
+
+`x-forwarded-for` is set by Render and Cloudflare in front of the service. It is
+client-controlled if the server is reached directly, so it identifies a bucket
+to charge requests against — not an identity, and not a security boundary.
 
 ---
 

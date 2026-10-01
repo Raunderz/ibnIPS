@@ -123,6 +123,34 @@ fn validate_session(
   }
 }
 
+/// Delete a session row, revoking the token that carries it.
+fn delete_session(
+  conn: sqlight.Connection,
+  session_id: String,
+) -> Result(Nil, String) {
+  db_query.exec_with_args(
+    "DELETE FROM sessions WHERE session_id = ?",
+    on: conn,
+    with: [sqlight.text(session_id)],
+  )
+}
+
+/// Remove sessions that have already expired.
+///
+/// Called after each successful login. Expired rows cannot be used to
+/// authenticate anything — `validate_session` rejects them — but without this
+/// the table grows without bound. Errors are ignored: housekeeping must never
+/// fail a login.
+fn purge_expired_sessions(conn: sqlight.Connection) -> Nil {
+  let _ =
+    db_query.exec_with_args(
+      "DELETE FROM sessions WHERE expires_at <= unixepoch()",
+      on: conn,
+      with: [],
+    )
+  Nil
+}
+
 // --- Request Parsing ---
 
 /// Parse JSON body into AuthRequest.
@@ -206,6 +234,9 @@ pub fn handle_auth(
                       |> wisp.string_body(json.to_string(error_json))
                     }
                     Ok(Nil) -> {
+                      // Housekeeping: drop sessions that have expired.
+                      purge_expired_sessions(conn)
+
                       // Sign JWT and return.
                       let token = create_jwt(user_id, session_id, jwt_secret)
 
@@ -216,7 +247,7 @@ pub fn handle_auth(
                         ])
 
                       wisp.ok()
-                      |> wisp.string_body(json.to_string(resp_json))
+                      |> wisp.json_body(json.to_string(resp_json))
                     }
                   }
                 }
@@ -232,14 +263,14 @@ pub fn handle_auth(
 // --- Middleware: Validate Bearer Token ---
 
 /// Extract and verify JWT from Authorization header.
-/// Returns Ok(user_id) if valid, Error(response) if not.
+/// Returns `Ok(#(user_id, session_id))` if valid, `Error(response)` if not.
 ///
-/// This is used by require_auth below.
+/// This is used by require_auth and handle_logout below.
 fn validate_token(
   req: wisp.Request,
   conn: sqlight.Connection,
   jwt_secret: String,
-) -> Result(String, wisp.Response) {
+) -> Result(#(String, String), wisp.Response) {
   case request.get_header(req, "authorization") {
     Error(Nil) -> {
       let error_json =
@@ -279,7 +310,7 @@ fn validate_token(
                     |> wisp.string_body(json.to_string(error_json)),
                   )
                 }
-                Ok(user_id) -> Ok(user_id)
+                Ok(user_id) -> Ok(#(user_id, claims.sid))
               }
             }
           }
@@ -314,6 +345,37 @@ pub fn require_auth(
 ) -> wisp.Response {
   case validate_token(request, conn, jwt_secret) {
     Error(response) -> response
-    Ok(user_id) -> handler(user_id)
+    Ok(#(user_id, _session_id)) -> handler(user_id)
+  }
+}
+
+/// POST /api/auth/logout
+///
+/// Deletes the caller's session row. The token itself stays cryptographically
+/// valid until it expires, but every protected route re-checks the `sid` claim
+/// against the `sessions` table, so a revoked token stops working immediately.
+///
+/// Returns `{"status":"logged_out"}`.
+pub fn handle_logout(
+  request: wisp.Request,
+  conn: sqlight.Connection,
+  jwt_secret: String,
+) -> wisp.Response {
+  case validate_token(request, conn, jwt_secret) {
+    Error(response) -> response
+    Ok(#(_user_id, session_id)) ->
+      case delete_session(conn, session_id) {
+        Error(msg) -> {
+          let error_json =
+            models.encode_error(ErrorResponse("database_error", msg))
+          wisp.response(500)
+          |> wisp.json_body(json.to_string(error_json))
+        }
+        Ok(Nil) -> {
+          let resp_json = json.object([#("status", json.string("logged_out"))])
+          wisp.ok()
+          |> wisp.json_body(json.to_string(resp_json))
+        }
+      }
   }
 }
