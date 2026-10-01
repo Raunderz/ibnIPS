@@ -9,8 +9,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.ibnips.app.data.model.*
+import com.ibnips.app.data.network.ApiClient
+import com.ibnips.app.data.network.AuthStore
+import com.ibnips.app.data.network.CampusNetworkAdapter
+import com.ibnips.app.data.repository.CampusRepository
 import com.ibnips.app.data.wifi.AndroidWifiScanner
 import com.ibnips.app.ui.components.BottomNavigationBar
 import com.ibnips.app.ui.navigation.Screen
@@ -36,6 +41,12 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun MainAppContent(wifiScanner: AndroidWifiScanner) {
+    // One repository for both the network adapter and the view model, so a
+    // room synced from GET /api/map is the same object the screens read.
+    val context = LocalContext.current
+    val repository = remember { CampusRepository() }
+    val authStore = remember { AuthStore(context) }
+    val networkAdapter = remember { CampusNetworkAdapter(ApiClient.apiService, repository) }
     var currentScreen by remember { mutableStateOf(Screen.Home) }
     var selectedBuildingId by remember { mutableStateOf<String?>(null) }
     var selectedFloorId by remember { mutableStateOf<String?>(null) }
@@ -61,16 +72,39 @@ fun MainAppContent(wifiScanner: AndroidWifiScanner) {
     var calibFloorId by remember { mutableStateOf("") }
     var calibDisplayName by remember { mutableStateOf("") }
     
-    val viewModel: CampusViewModel = viewModel()
+    val authViewModel: AuthViewModel = viewModel(
+        factory = AuthViewModelFactory(networkAdapter, authStore)
+    )
+    val authState by authViewModel.uiState.collectAsState()
+
+    val viewModel: CampusViewModel = viewModel(
+        factory = CampusViewModelFactory(repository, networkAdapter)
+    )
     val wifiScannerViewModel: WifiScannerViewModel = viewModel(
         factory = WifiScannerViewModelFactory(wifiScanner)
     )
     val positioningViewModel: IndoorPositioningViewModel = viewModel(
-        factory = IndoorPositioningViewModelFactory(viewModel, wifiScanner)
+        factory = IndoorPositioningViewModelFactory(
+            campusViewModel = viewModel,
+            wifiScanner = wifiScanner,
+            networkAdapter = networkAdapter,
+            authToken = { authViewModel.token },
+            onUnauthorized = { reason -> authViewModel.signOut(reason) }
+        )
     )
     val navigationViewModel: NavigationViewModel = viewModel(
         factory = NavigationViewModelFactory(viewModel)
     )
+
+    // Every authenticated screen is behind this, so the whole app waits on a
+    // token rather than each screen handling a 401 on its own.
+    if (authState.state != AuthState.SIGNED_IN) {
+        LoginScreen(
+            viewModel = authViewModel,
+            signedOutReason = authViewModel.signedOutReason
+        )
+        return
+    }
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),

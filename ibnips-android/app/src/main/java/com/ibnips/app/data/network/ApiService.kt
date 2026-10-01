@@ -19,6 +19,12 @@ interface ApiService {
         @Body request: PingRequest
     ): Response<PingResponse>
 
+    @POST("api/position")
+    suspend fun requestPosition(
+        @Header("Authorization") token: String,
+        @Body request: PositionRequest
+    ): Response<PositionResultDto>
+
     @GET("api/nodes")
     suspend fun getNodes(): Response<List<NodeNetworkDto>>
 

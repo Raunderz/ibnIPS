@@ -29,6 +29,7 @@ fun IndoorPositioningScreen(
     val currentLocation by viewModel.currentLocation.collectAsState()
     val detectedAPs by viewModel.detectedAPs.collectAsState()
     val matchedAPs by viewModel.matchedAPs.collectAsState()
+    val detail by viewModel.detail.collectAsState()
 
     var scale by remember { mutableFloatStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
@@ -84,20 +85,42 @@ fun IndoorPositioningScreen(
                         currentLocation?.let { loc ->
                             Text(text = "Location: ${loc.displayName}", style = MaterialTheme.typography.bodyLarge)
                             Text(text = "Block: ${loc.blockId}, Floor: ${loc.floorId}", style = MaterialTheme.typography.bodySmall)
-                            
+
                             Spacer(modifier = Modifier.height(8.dp))
-                            
+
                             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                                 Column {
                                     Text(text = "Confidence", style = MaterialTheme.typography.labelSmall)
-                                    Text(text = "${(loc.confidence * 100).toInt()}%", fontWeight = FontWeight.Bold)
+                                    Text(
+                                        text = loc.confidenceLevel
+                                            ?: "${(loc.confidence * 100).toInt()}%",
+                                        fontWeight = FontWeight.Bold
+                                    )
                                 }
-                                Column {
-                                    Text(text = "APs (Matched/Total)", style = MaterialTheme.typography.labelSmall)
-                                    Text(text = "$matchedAPs / $detectedAPs", fontWeight = FontWeight.Bold)
+                                // A server match is scored against every tagged
+                                // room on campus, so it reports how much history
+                                // backs the answer instead of how many of this
+                                // scan's networks lined up.
+                                if (loc.fromServer) {
+                                    loc.samples?.let { samples ->
+                                        Column {
+                                            Text(text = "Readings", style = MaterialTheme.typography.labelSmall)
+                                            Text(text = "$samples", fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+                                } else {
+                                    Column {
+                                        Text(text = "APs (Matched/Total)", style = MaterialTheme.typography.labelSmall)
+                                        Text(text = "$matchedAPs / $detectedAPs", fontWeight = FontWeight.Bold)
+                                    }
                                 }
                             }
                         }
+                    }
+
+                    if (detail != null) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(text = detail!!, style = MaterialTheme.typography.bodySmall)
                     }
 
                     if (state == PositioningState.NO_FINGERPRINTS) {
