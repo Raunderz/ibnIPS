@@ -2,6 +2,7 @@ import database
 import db_query
 import env
 import gleam/dynamic/decode
+import gleam/io
 import gleam/list
 import gleam/result
 import sqlight
@@ -13,6 +14,45 @@ pub type Connection =
 /// Re-exported so callers only need to import db.
 pub fn is_turso(conn: Connection) -> Bool {
   database.is_turso(conn)
+}
+
+/// Name the database this connection actually points at, for the boot log.
+///
+/// `env_ffi` falls back to a `.env` file in the working directory, so a plain
+/// `gleam run` picks up whatever `DATABASE_URL` is written there and connects to
+/// Turso — even when `DB_PATH` names a local file, which is then ignored. Saying
+/// only "Database connected." makes those two cases look identical, so a local
+/// test run writes to production without saying so.
+pub fn describe(conn: Connection) -> String {
+  case is_turso(conn) {
+    True -> {
+      let #(url, _) = database.credentials(conn)
+      "Turso at " <> url
+    }
+    False -> "local SQLite file at " <> env.db_path()
+  }
+}
+
+/// A warning to print when `DB_PATH` is set but the connection went to Turso
+/// anyway, or `""` when there is nothing to warn about.
+///
+/// Set `DB_PATH` and expect a local file, but find `DATABASE_URL` in `.env`?
+/// That is the case where a test run quietly hits production, and it is silent
+/// enough to be worth a loud line at boot.
+pub fn ignored_db_path_warning(conn: Connection) -> String {
+  case is_turso(conn) {
+    False -> ""
+    True ->
+      case env.db_path_is_set() {
+        False -> ""
+        True ->
+          "WARNING: DB_PATH is set but ignored — DATABASE_URL/DATABASE_TOKEN "
+          <> "from the environment or .env take precedence, so this run is "
+          <> "using the REMOTE database. Unset them to work on "
+          <> env.db_path()
+          <> " instead."
+      }
+  }
 }
 
 /// Open the SQLite database with the pragmas the app depends on.
@@ -207,7 +247,6 @@ CREATE TABLE IF NOT EXISTS sessions (
   use _ <- result.try(db_query.exec_plain(nodes_sql, conn))
   use _ <- result.try(db_query.exec_plain(room_aps_sql, conn))
   use _ <- result.try(db_query.exec_plain(edges_sql, conn))
-  use _ <- result.try(db_query.exec_plain(room_aps_sql, conn))
   use _ <- result.try(
     list.try_each(index_sqls, fn(sql) { db_query.exec_plain(sql, conn) }),
   )
@@ -215,7 +254,17 @@ CREATE TABLE IF NOT EXISTS sessions (
   use _ <- result.try(db_query.exec_plain(sessions_sql, conn))
 
   // Fold any readings recorded by an older version of the app into room_aps.
-  use _ <- result.try(migrate_fingerprints(conn))
+  // Deliberately not part of the chain above: a database left over from an older
+  // schema can make this statement fail, and refusing to boot over data that is
+  // already superseded by newer tables would take the service down for everyone.
+  case migrate_fingerprints(conn) {
+    Ok(Nil) -> Nil
+    Error(_) ->
+      io.println(
+        "Legacy fingerprints migration failed — continuing without it. Old "
+        <> "readings in `fingerprints` were not copied into room_aps.",
+      )
+  }
 
   Ok(Nil)
 }

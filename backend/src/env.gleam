@@ -127,6 +127,19 @@ pub fn db_path() -> String {
   }
 }
 
+/// Whether `DB_PATH` was set to a real value.
+///
+/// Only used to warn: `db_path` falls back to `icps.db` when unset, so "unset"
+/// and "set to the default" are the same path but not the same intent. An
+/// explicit `DB_PATH` that gets ignored is worth complaining about, because it
+/// means someone asked for a local database and did not get one.
+pub fn db_path_is_set() -> Bool {
+  case get_env("DB_PATH") {
+    Ok(path) -> path != ""
+    Error(_) -> False
+  }
+}
+
 // --- Request Limits ---
 
 /// Maximum request body we will buffer into memory, in bytes.

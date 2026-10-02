@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
 """Copy a local SQLite database into Turso.
 
-Run once, to move existing data across. After that the backend talks to Turso on
-its own and this script is not needed.
+    python3 migrate_to_turso.py <database>
 
-    python3 migrate_to_turso.py [database]        # defaults to icps.db
+The path is required — there is no default, so a mistyped run cannot quietly
+push whatever happens to be lying around.
 
 Credentials come from .env next to this file, or from DATABASE_URL and
 DATABASE_TOKEN in the environment.
+
+Note that DATABASE_URL/DATABASE_TOKEN being set is what makes the *backend* use
+Turso. To collect data locally first, unset them, run the backend against a
+local file, then push that file here with this script.
 
 The old `fingerprints` table is not copied. It holds one row per raw reading from
 before the move to per-network statistics, nothing writes to it any more, and
@@ -88,7 +92,13 @@ def to_https(url):
 
 
 def send(api, token, sql, args):
-    """Run one statement, retrying a few times. Returns the decoded rows."""
+    """Run one statement, retrying a few times.
+
+    Returns the decoded result object: `{"cols": [{"name": ...}], "rows": [...]}`
+    for a SELECT, or `{}` for a write. Column names come back separately from
+    the values, so a caller that wants rows as dicts has to zip them together —
+    see turso_query.py.
+    """
     body = json.dumps({
         "requests": [
             {"type": "execute", "stmt": {"sql": sql, "args": args}},
@@ -122,7 +132,7 @@ def send(api, token, sql, args):
     result = payload["results"][0]
     if "error" in result:
         sys.exit("Error from Turso: " + json.dumps(result["error"]))
-    return result.get("response", {}).get("result", {}).get("rows", [])
+    return result.get("response", {}).get("result", {})
 
 
 def to_args(row, columns, kinds):
@@ -149,7 +159,10 @@ def table_exists(connection, name):
 
 
 def main():
-    path = sys.argv[1] if len(sys.argv) > 1 else "icps.db"
+    if len(sys.argv) < 2:
+        sys.exit("Usage: python3 migrate_to_turso.py <database>")
+
+    path = sys.argv[1]
     if not os.path.exists(path):
         sys.exit(f"Error: {path} not found")
 
@@ -186,8 +199,8 @@ def main():
     print("\nVerifying...")
     for table, _, _ in TABLES:
         try:
-            rows = send(api, token, f"SELECT COUNT(*) FROM {table};", [])
-            print(f"  {table:<9} {rows[0][0]['value']} rows in Turso")
+            result = send(api, token, f"SELECT COUNT(*) FROM {table};", [])
+            print(f"  {table:<9} {result['rows'][0][0]['value']} rows in Turso")
         except Exception:
             print(f"  {table:<9} could not read back")
 

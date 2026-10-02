@@ -4,3 +4,4 @@
 erl_crash.dump
 map.json
 .env
+__pycache__/

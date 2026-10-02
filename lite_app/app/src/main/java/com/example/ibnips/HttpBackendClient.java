@@ -27,6 +27,12 @@ public class HttpBackendClient {
     private static final String BASE_URL = "https://ibnips.onrender.com";
     private static final int    TIMEOUT  = 8000; // ms
 
+    /** The server refused the token; logging in again is the way out. */
+    public static final int UNAUTHORIZED = 401;
+
+    /** The request never got an HTTP response. */
+    public static final int NO_STATUS = 0;
+
     /**
      * Why the most recent call failed, in words meant for a human.
      *
@@ -37,9 +43,24 @@ public class HttpBackendClient {
      */
     private String lastError = "";
 
+    /**
+     * HTTP status of the most recent call, or {@link #NO_STATUS} when the
+     * request never reached the server.
+     *
+     * <p>Callers need this to tell "your token was refused" apart from "the
+     * server rejected your data" or "the network dropped". Only the first means
+     * logging in again will help.
+     */
+    private int lastStatus = NO_STATUS;
+
     /** The reason the most recent call failed, or "" if it succeeded. */
     public String getLastError() {
         return lastError;
+    }
+
+    /** The HTTP status of the most recent call, or {@link #NO_STATUS}. */
+    public int getLastStatus() {
+        return lastStatus;
     }
 
     /** Pull the human-readable part out of the server's error body. */
@@ -233,6 +254,7 @@ public class HttpBackendClient {
             }
 
             int status = conn.getResponseCode();
+            lastStatus = status;
             if (status < 200 || status >= 300) {
                 String errorBody = readErrorBody(conn);
                 Log.e(TAG, "POST " + path + " returned HTTP " + status + " " + errorBody);
@@ -244,6 +266,7 @@ public class HttpBackendClient {
             return readBody(conn);
         } catch (Exception e) {
             Log.e(TAG, "POST " + path + " exception", e);
+            lastStatus = NO_STATUS;
             lastError = "no reply from " + BASE_URL + " (" + e + ")";
             return null;
         } finally {
@@ -267,6 +290,7 @@ public class HttpBackendClient {
             }
 
             int status = conn.getResponseCode();
+            lastStatus = status;
             if (status < 200 || status >= 300) {
                 String errorBody = readErrorBody(conn);
                 Log.e(TAG, "GET " + path + " returned HTTP " + status + " " + errorBody);
@@ -278,6 +302,7 @@ public class HttpBackendClient {
             return readBody(conn);
         } catch (Exception e) {
             Log.e(TAG, "GET " + path + " exception", e);
+            lastStatus = NO_STATUS;
             lastError = "no reply from " + BASE_URL + " (" + e + ")";
             return null;
         } finally {

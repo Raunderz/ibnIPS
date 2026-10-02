@@ -21,6 +21,7 @@ import org.json.JSONArray;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * Main activity for ibnIPS app.
@@ -37,6 +38,10 @@ public class MainActivity extends Activity {
     /** Visits of a room below which the app suggests more tagging. Matches the
      *  backend's WELL_MAPPED_READINGS. */
     private static final int    WELL_MAPPED_SAMPLES = 10;
+    /** Characters the backend keeps verbatim when it derives a node_id. Must
+     *  match `ping.node_id_characters`. */
+    private static final String NODE_ID_CHARACTERS =
+            "abcdefghijklmnopqrstuvwxyz0123456789";
 
     // ------------------------------------------------------------------
     // Views
@@ -240,12 +245,16 @@ public class MainActivity extends Activity {
         int floor = floorSpinner.getSelectedItemPosition() + 1; // 1-indexed
 
         // Store locally immediately so matching works 100%
-        saveTaggedLocation(roomName, floor, roomName.toLowerCase().replace(" ", "_"), lastScanResults);
+        saveTaggedLocation(roomName, floor, generateNodeId(roomName, floor), lastScanResults);
 
         // No early check for a token here. If there isn't one, the login below
         // gets one first — bailing out at this point is what made the first tap
         // after typing a key only save on the phone.
         setStatus("Pinging backend…", false);
+        // Snapshot: pressing SCAN while this runs reassigns lastScanResults on
+        // the UI thread, and the thread below would then send a different scan
+        // than the one just saved locally.
+        final List<WifiScanResult> scans = new ArrayList<>(lastScanResults);
         runInBackground(() -> {
             // Log in here if we have a key but no token yet. Tapping PING
             // straight after typing the key lost the race against the login
@@ -273,20 +282,30 @@ public class MainActivity extends Activity {
                     "",     // no previous node
                     -1,     // steps unknown
                     "",     // direction unknown
-                    lastScanResults
+                    scans
             );
+            // Read on this thread: another request in flight could overwrite the
+            // shared last-error state before the UI thread gets to look at it.
+            final String pingError = backendClient.getLastError();
+            final int pingStatus = backendClient.getLastStatus();
             mainHandler.post(() -> {
                 if (nodeId != null) {
                     // Keep the token so the next ping doesn't log in again.
                     authToken = bearer;
                     lastAuthError = "";
                     if (!key.isEmpty()) saveAccessKey(key);
-                    setStatus("Pinged & Saved: " + roomName + " (" + lastScanResults.size() + " APs)", false);
-                    Toast.makeText(MainActivity.this, "Tagged location '" + roomName + "' with " + lastScanResults.size() + " Wi-Fi signals", Toast.LENGTH_SHORT).show();
+                    setStatus("Pinged & Saved: " + roomName + " (" + scans.size() + " APs)", false);
+                    Toast.makeText(MainActivity.this, "Tagged location '" + roomName + "' with " + scans.size() + " Wi-Fi signals", Toast.LENGTH_SHORT).show();
                 } else {
-                    authToken = null;
-                    lastAuthError = backendClient.getLastError();
-                    setStatus("Ping rejected: " + lastAuthError, true);
+                    // Only a rejected token means we are no longer logged in. A
+                    // validation error, a database failure or a dropped
+                    // connection all leave a perfectly good token in hand, and
+                    // throwing it away also disabled server-side locating.
+                    if (pingStatus == HttpBackendClient.UNAUTHORIZED) {
+                        authToken = null;
+                    }
+                    lastAuthError = pingError;
+                    setStatus("Ping rejected: " + pingError, true);
                 }
             });
         });
@@ -368,28 +387,35 @@ public class MainActivity extends Activity {
     }
 
     private void performLocationMatching() {
-        lastScanResults = WifiScanner.getLastScanResults(this);
-
+        // Use the scan the caller already collected, freshness filter and all.
+        // Re-reading here used to go through getLastScanResults, which applies
+        // no age limit — throwing away the wait the caller just did and feeding
+        // stale readings into the match.
         if (lastScanResults.isEmpty()) {
             setStatus("No Wi-Fi networks found to locate", true);
             return;
         }
 
-        setStatus("Matching Wi-Fi fingerprints… (" + lastScanResults.size() + " APs)", false);
+        final List<WifiScanResult> scans = new ArrayList<>(lastScanResults);
+        // Snapshot: fetching the map adds to localTaggedLocations on the UI
+        // thread, and iterating it from here would race that.
+        final List<TaggedLocation> rooms = new ArrayList<>(localTaggedLocations);
+
+        setStatus("Matching Wi-Fi fingerprints… (" + scans.size() + " APs)", false);
         runInBackground(() -> {
             PositionResponse backendPos = null;
 
             // 1. Attempt backend position lookup if authenticated
             if (authToken != null) {
                 try {
-                    backendPos = backendClient.fetchPosition(authToken, lastScanResults);
+                    backendPos = backendClient.fetchPosition(authToken, scans);
                 } catch (Exception e) {
                     Log.w(TAG, "Backend positioning failed, using local match", e);
                 }
             }
 
             // 2. Local fingerprint match with confidence evaluation
-            TaggedLocation.MatchResult localMatch = findBestLocalMatch(lastScanResults);
+            TaggedLocation.MatchResult localMatch = findBestLocalMatch(rooms, scans);
 
             final PositionResponse finalBackendPos = backendPos;
             mainHandler.post(() -> {
@@ -453,14 +479,37 @@ public class MainActivity extends Activity {
     // Local Fingerprint Matching & Storage
     // ------------------------------------------------------------------
 
-    private TaggedLocation.MatchResult findBestLocalMatch(List<WifiScanResult> currentScans) {
-        if (localTaggedLocations.isEmpty() || currentScans == null || currentScans.isEmpty()) {
+    /**
+     * Build the node id for a room, exactly as the backend does.
+     *
+     * <p>Must stay in step with {@code ping.generate_node_id}: the room name is
+     * lower-cased, every character outside {@link #NODE_ID_CHARACTERS} becomes an
+     * underscore, and the floor is appended. If the two disagree, a room tagged
+     * on the phone is stored under a different id than the same room fetched
+     * from {@code GET /api/map}, so the merge cannot recognise it as a duplicate
+     * and the same room ends up in the local list twice.
+     *
+     * <p>{@link Locale#ROOT} rather than the default locale: in a Turkish locale
+     * {@code "I".toLowerCase()} is a dotless {@code i}, which is not a character
+     * the backend keeps.
+     */
+    private static String generateNodeId(String name, int floor) {
+        StringBuilder id = new StringBuilder();
+        for (char c : name.toLowerCase(Locale.ROOT).toCharArray()) {
+            id.append(NODE_ID_CHARACTERS.indexOf(c) >= 0 ? c : '_');
+        }
+        return id + "_f" + floor;
+    }
+
+    private TaggedLocation.MatchResult findBestLocalMatch(
+            List<TaggedLocation> rooms, List<WifiScanResult> currentScans) {
+        if (rooms.isEmpty() || currentScans == null || currentScans.isEmpty()) {
             return null;
         }
 
         TaggedLocation.MatchResult bestMatch = null;
 
-        for (TaggedLocation tagged : localTaggedLocations) {
+        for (TaggedLocation tagged : rooms) {
             TaggedLocation.MatchResult result = tagged.computeMatchResult(currentScans);
             Log.d(TAG, "Match result for '" + tagged.name + "': score=" + result.score + ", matchCount=" + result.matchCount + ", conf=" + result.confidencePct + "%");
 
@@ -473,9 +522,10 @@ public class MainActivity extends Activity {
     }
 
     private void saveTaggedLocation(String name, int floor, String nodeId, List<WifiScanResult> scans) {
-        // Remove existing duplicate by name
+        // Remove existing duplicate by node id, which now encodes the floor —
+        // deduping by name would delete the same room on a different floor.
         for (int i = localTaggedLocations.size() - 1; i >= 0; i--) {
-            if (localTaggedLocations.get(i).name.equalsIgnoreCase(name)) {
+            if (localTaggedLocations.get(i).nodeId.equals(nodeId)) {
                 localTaggedLocations.remove(i);
             }
         }

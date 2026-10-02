@@ -28,7 +28,12 @@ pub fn main() -> Nil {
 
   // Open SQLite database and run migrations.
   let assert Ok(conn) = db.init()
-  io.println("Database connected.")
+  let warning = db.ignored_db_path_warning(conn)
+  case warning {
+    "" -> Nil
+    _ -> io.println(warning)
+  }
+  io.println("Database: " <> db.describe(conn))
 
   // Load JWT secret from environment. Required — the server refuses to boot
   // without it rather than signing tokens with a publicly known key.

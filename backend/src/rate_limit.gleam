@@ -111,14 +111,13 @@ fn on_hit(
   process.send(reply, count <= state.max_requests)
 
   let counters = dict.insert(state.counters, key, #(window_start, count))
-  let hits = state.hits + 1
 
-  let counters = case hits >= prune_every_hits {
-    True -> prune(counters, now, state.window_ms)
-    False -> counters
+  let #(counters, hits) = case state.hits + 1 >= prune_every_hits {
+    True -> #(prune(counters, now, state.window_ms), 0)
+    False -> #(counters, state.hits + 1)
   }
 
-  actor.continue(State(..state, counters:, hits: 0))
+  actor.continue(State(..state, counters:, hits:))
 }
 
 /// Drop counters from windows that have already closed.
