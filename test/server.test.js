@@ -95,6 +95,15 @@ test('each request gets a fresh nonce', async () => {
   assert.notEqual(nonceOf(first), nonceOf(second));
 });
 
+test('the page carries a visible sign-in status fallback', async () => {
+  // The status text lives in the markup on purpose: if the inline script is
+  // blocked, nothing can update it, and the page must not look simply empty.
+  const page = await (await fetch(`${baseUrl}/`)).text();
+
+  assert.match(page, /id="signin-status"/);
+  assert.match(page, /Loading Google Sign-In/);
+});
+
 test('the raw template is not served directly', async () => {
   const response = await fetch(`${baseUrl}/index.html`, { redirect: 'manual' });
 

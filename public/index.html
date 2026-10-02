@@ -26,6 +26,12 @@
       padding: 25px;
     }
 
+    #signin-status {
+      margin-top: 12px;
+      font-size: 14px;
+      color: #666;
+    }
+
     #result {
       margin-top: 25px;
       white-space: pre-wrap;
@@ -56,6 +62,14 @@
     <p>Sign in using your KIIT Google account.</p>
 
     <div id="google-signin"></div>
+
+    <!--
+      Rendered as HTML rather than set by script on purpose: if the inline
+      script is blocked (a Content-Security-Policy nonce mismatch, for
+      example) nothing can update this, so the message has to be in the markup
+      to avoid leaving a silently empty page. The script clears it on success.
+    -->
+    <p id="signin-status">Loading Google Sign-In...</p>
 
     <div id="result"></div>
   </div>
@@ -159,6 +173,14 @@
         .replaceAll("'", '&#039;');
     }
 
+    function setSignInStatus(message) {
+      const status = document.getElementById('signin-status');
+
+      if (status) {
+        status.textContent = message;
+      }
+    }
+
     function initializeGoogleSignIn(attempt = 0) {
       if (!window.google?.accounts?.id) {
         /*
@@ -167,34 +189,56 @@
          * with no way for the user to tell what went wrong.
          */
         if (attempt >= 50) {
-          const result = document.getElementById('result');
-          result.textContent =
-            'Could not load Google Sign-In. Check your connection or content blocker, then reload.';
+          setSignInStatus(
+            'Could not load Google Sign-In after 5 seconds. This is usually ' +
+            'an ad blocker or privacy extension blocking accounts.google.com. ' +
+            'Disable it for this page, or check your connection, then reload.'
+          );
+
           return;
         }
+
+        setSignInStatus('Loading Google Sign-In...');
 
         setTimeout(() => initializeGoogleSignIn(attempt + 1), 100);
         return;
       }
 
-      google.accounts.id.initialize({
-        client_id: GOOGLE_CLIENT_ID,
+      try {
+        google.accounts.id.initialize({
+          client_id: GOOGLE_CLIENT_ID,
 
-        callback: handleGoogleResponse,
+          callback: handleGoogleResponse,
 
-        auto_select: false
-      });
+          auto_select: false
+        });
 
-      google.accounts.id.renderButton(
-        document.getElementById('google-signin'),
-        {
-          type: 'standard',
-          size: 'large',
-          theme: 'outline',
-          text: 'sign_in_with',
-          shape: 'rectangular'
-        }
-      );
+        google.accounts.id.renderButton(
+          document.getElementById('google-signin'),
+          {
+            type: 'standard',
+            size: 'large',
+            theme: 'outline',
+            text: 'sign_in_with',
+            shape: 'rectangular'
+          }
+        );
+
+        setSignInStatus('');
+      } catch (error) {
+        /*
+         * renderButton throws when the client ID is not authorised for this
+         * origin, or when the ID is malformed. Surface that instead of
+         * leaving an empty box with no explanation.
+         */
+        setSignInStatus(
+          'Google Sign-In could not be initialised: ' +
+          (error && error.message ? error.message : 'unknown error') +
+          '. Check that GOOGLE_CLIENT_ID on the server lists this origin.'
+        );
+
+        console.error(error);
+      }
     }
 
     initializeGoogleSignIn();
