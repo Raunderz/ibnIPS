@@ -83,6 +83,28 @@
       try {
         const result = document.getElementById('result');
 
+        /*
+         * When the OAuth client's "Authorized JavaScript origins" does not
+         * include the origin this page is served from, Google still fires the
+         * callback but hands back no credential. Posting that empty value
+         * only earns a confusing 400, so name the real cause instead and
+         * report the exact origin that needs authorising.
+         */
+        if (!response || !response.credential) {
+          result.textContent =
+            'Google returned no credential for this site.\n\n' +
+            'That means the OAuth client is not authorised for this origin.\n' +
+            'Add this exact origin under "Authorized JavaScript origins" in ' +
+            'Google Cloud Console > APIs & Services > Credentials > ' +
+            'OAuth client ID ' + GOOGLE_CLIENT_ID + ':\n\n' +
+            window.location.origin + '\n\n' +
+            'The scheme, host and port must all match. Note that Google treats ' +
+            'localhost and 127.0.0.1 as different origins, and that changes ' +
+            'when you change the port.';
+
+          return;
+        }
+
         result.textContent = 'Signing in...';
 
         const apiResponse = await fetch('/auth/google', {
