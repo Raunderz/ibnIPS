@@ -59,6 +59,10 @@ public class MainActivity extends Activity {
     private List<TaggedLocation>    localTaggedLocations = new ArrayList<>();
     private MapResponse             cachedMapData   = null;
     private String                  authToken       = null;
+    /** Why the last login attempt failed, or "" if it has not been tried. */
+    private String                  lastAuthError   = "";
+    /** The key we last sent, so we don't send it twice for no reason. */
+    private String                  lastTriedKey    = "";
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
@@ -105,6 +109,14 @@ public class MainActivity extends Activity {
             return true;
         });
 
+        // Leaving the key field also re-authenticates. Without this, typing a
+        // key and tapping straight to PING never sent it — the keyboard's Done
+        // key was the only thing that triggered a login, so the request went
+        // out unauthenticated and the status said "Auth pending".
+        accessKeyInput.setOnFocusChangeListener((v, hasFocus) -> {
+            if (!hasFocus) authenticateInBackground();
+        });
+
         // Load persistent tagged locations
         loadTaggedLocations();
 
@@ -139,23 +151,34 @@ public class MainActivity extends Activity {
 
         if (key.isEmpty()) {
             authToken = null;
+            lastAuthError = "";
             setStatus("Enter the access key to connect", true);
             return;
         }
 
+        // Pressing Done also closes the keyboard, which fires the focus
+        // listener. Skip the repeat when this exact key already got us a token.
+        if (key.equals(lastTriedKey) && authToken != null) return;
+
+        lastTriedKey = key;
         setStatus("Authenticating…", false);
         runInBackground(() -> {
             String token = backendClient.authenticate(AUTH_EMAIL, key);
             mainHandler.post(() -> {
                 if (token != null) {
                     authToken = token;
+                    lastAuthError = "";
                     saveAccessKey(key);
                     setStatus("Ready", false);
                 } else {
+                    // Say what the server actually said. "Wrong access key" was
+                    // all we used to show, which is indistinguishable from an
+                    // unreachable server or a rejected body.
                     authToken = null;
-                    setStatus("Wrong access key", true);
+                    lastAuthError = backendClient.getLastError();
+                    setStatus("Auth failed: " + lastAuthError, true);
                     Toast.makeText(MainActivity.this,
-                            "The backend rejected that access key.", Toast.LENGTH_LONG).show();
+                            "Login refused: " + lastAuthError, Toast.LENGTH_LONG).show();
                 }
             });
         });
@@ -219,15 +242,32 @@ public class MainActivity extends Activity {
         // Store locally immediately so matching works 100%
         saveTaggedLocation(roomName, floor, roomName.toLowerCase().replace(" ", "_"), lastScanResults);
 
-        if (authToken == null) {
-            setStatus("Tagged locally: " + roomName + " (Auth pending)", false);
-            return;
-        }
-
+        // No early check for a token here. If there isn't one, the login below
+        // gets one first — bailing out at this point is what made the first tap
+        // after typing a key only save on the phone.
         setStatus("Pinging backend…", false);
         runInBackground(() -> {
+            // Log in here if we have a key but no token yet. Tapping PING
+            // straight after typing the key lost the race against the login
+            // started by the focus listener, so the ping went out with no
+            // token and the room was only saved on the phone.
+            String key = accessKeyInput.getText().toString().trim();
+            String token = authToken;
+            if (token == null && !key.isEmpty()) {
+                token = backendClient.authenticate(AUTH_EMAIL, key);
+            }
+
+            if (token == null) {
+                String error = backendClient.getLastError();
+                final String why = error.isEmpty() ? "no access key entered" : error;
+                mainHandler.post(() -> setStatus(
+                        "Saved on phone only — not sent to server (" + why + ")", true));
+                return;
+            }
+
+            final String bearer = token;
             String nodeId = backendClient.ping(
-                    authToken,
+                    bearer,
                     roomName,
                     floor,
                     "",     // no previous node
@@ -237,10 +277,16 @@ public class MainActivity extends Activity {
             );
             mainHandler.post(() -> {
                 if (nodeId != null) {
+                    // Keep the token so the next ping doesn't log in again.
+                    authToken = bearer;
+                    lastAuthError = "";
+                    if (!key.isEmpty()) saveAccessKey(key);
                     setStatus("Pinged & Saved: " + roomName + " (" + lastScanResults.size() + " APs)", false);
                     Toast.makeText(MainActivity.this, "Tagged location '" + roomName + "' with " + lastScanResults.size() + " Wi-Fi signals", Toast.LENGTH_SHORT).show();
                 } else {
-                    setStatus("Ping failed on server — saved locally (" + roomName + ")", true);
+                    authToken = null;
+                    lastAuthError = backendClient.getLastError();
+                    setStatus("Ping rejected: " + lastAuthError, true);
                 }
             });
         });
@@ -289,7 +335,7 @@ public class MainActivity extends Activity {
                     int fpCount = map.fingerprints != null ? map.fingerprints.size() : 0;
                     setStatus("Map loaded: " + nodeCount + " nodes, " + edgeCount + " edges, " + fpCount + " tagged", false);
                 } else {
-                    setStatus("Map fetch failed — see logcat", true);
+                    setStatus("Map fetch failed: " + backendClient.getLastError(), true);
                 }
             });
         });

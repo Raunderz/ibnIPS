@@ -27,6 +27,40 @@ public class HttpBackendClient {
     private static final String BASE_URL = "https://ibnips.onrender.com";
     private static final int    TIMEOUT  = 8000; // ms
 
+    /**
+     * Why the most recent call failed, in words meant for a human.
+     *
+     * Every request here returns null on failure, which on its own tells the
+     * user nothing — a wrong key, an unreachable server and a rejected body all
+     * look the same. This keeps the reason for the last failure so the UI can
+     * show it instead of a generic message.
+     */
+    private String lastError = "";
+
+    /** The reason the most recent call failed, or "" if it succeeded. */
+    public String getLastError() {
+        return lastError;
+    }
+
+    /** Pull the human-readable part out of the server's error body. */
+    private String explainError(String body) {
+        if (body == null || body.isEmpty()) return "no reason given";
+        // The API answers errors as {"error":"code","details":"message"}.
+        // Prefer the message; fall back to showing the body if it isn't JSON.
+        try {
+            JSONObject json = new JSONObject(body);
+            String code    = json.optString("error", "");
+            String details = json.optString("details", "");
+            if (!details.isEmpty()) {
+                return code.isEmpty() ? details : code + " — " + details;
+            }
+            if (!code.isEmpty()) return code;
+        } catch (Exception ignored) {
+            // Not JSON (an HTML error page, say) — show it as-is below.
+        }
+        return body.length() > 200 ? body.substring(0, 200) + "…" : body;
+    }
+
     // ------------------------------------------------------------------
     // authenticate — POST /api/auth → returns bearer token
     // ------------------------------------------------------------------
@@ -47,9 +81,15 @@ public class HttpBackendClient {
             JSONObject response = post("/api/auth", null, body);
             if (response == null) return null;
 
+            if (!response.has("token")) {
+                lastError = "server replied 200 but sent no token";
+                return null;
+            }
+            lastError = "";
             return response.getString("token");
         } catch (Exception e) {
             Log.e(TAG, "authenticate failed", e);
+            lastError = "could not read the reply: " + e;
             return null;
         }
     }
@@ -94,9 +134,15 @@ public class HttpBackendClient {
             JSONObject response = post("/api/ping", token, body);
             if (response == null) return null;
 
+            if (!response.has("node_id")) {
+                lastError = "server accepted the ping but sent no node_id";
+                return null;
+            }
+            lastError = "";
             return response.getString("node_id");
         } catch (Exception e) {
             Log.e(TAG, "ping failed", e);
+            lastError = "could not read the reply: " + e;
             return null;
         }
     }
@@ -115,9 +161,11 @@ public class HttpBackendClient {
         try {
             JSONObject response = get("/api/map", token);
             if (response == null) return null;
+            lastError = "";
             return MapResponse.fromJSON(response);
         } catch (Exception e) {
             Log.e(TAG, "getMap failed", e);
+            lastError = "could not read the map: " + e;
             return null;
         }
     }
@@ -147,9 +195,11 @@ public class HttpBackendClient {
             JSONObject response = post("/api/position", token, body);
             if (response == null) return null;
 
+            lastError = "";
             return PositionResponse.fromJSON(response);
         } catch (Exception e) {
             Log.e(TAG, "fetchPosition failed", e);
+            lastError = "could not read the reply: " + e;
             return null;
         }
     }
@@ -184,14 +234,17 @@ public class HttpBackendClient {
 
             int status = conn.getResponseCode();
             if (status < 200 || status >= 300) {
-                Log.e(TAG, "POST " + path + " returned HTTP " + status);
-                logErrorBody(conn);
+                String errorBody = readErrorBody(conn);
+                Log.e(TAG, "POST " + path + " returned HTTP " + status + " " + errorBody);
+                lastError = "HTTP " + status + " — " + explainError(errorBody);
                 return null;
             }
 
+            lastError = "";
             return readBody(conn);
         } catch (Exception e) {
             Log.e(TAG, "POST " + path + " exception", e);
+            lastError = "no reply from " + BASE_URL + " (" + e + ")";
             return null;
         } finally {
             if (conn != null) conn.disconnect();
@@ -215,14 +268,17 @@ public class HttpBackendClient {
 
             int status = conn.getResponseCode();
             if (status < 200 || status >= 300) {
-                Log.e(TAG, "GET " + path + " returned HTTP " + status);
-                logErrorBody(conn);
+                String errorBody = readErrorBody(conn);
+                Log.e(TAG, "GET " + path + " returned HTTP " + status + " " + errorBody);
+                lastError = "HTTP " + status + " — " + explainError(errorBody);
                 return null;
             }
 
+            lastError = "";
             return readBody(conn);
         } catch (Exception e) {
             Log.e(TAG, "GET " + path + " exception", e);
+            lastError = "no reply from " + BASE_URL + " (" + e + ")";
             return null;
         } finally {
             if (conn != null) conn.disconnect();
@@ -241,17 +297,24 @@ public class HttpBackendClient {
         return new JSONObject(sb.toString());
     }
 
-    private void logErrorBody(HttpURLConnection conn) {
+    /**
+     * Read the error body the server sent back, or "" if there wasn't one.
+     *
+     * The backend answers errors as JSON with a human-readable "details"
+     * field, so this is usually worth showing rather than discarding.
+     */
+    private String readErrorBody(HttpURLConnection conn) {
         try {
-            if (conn.getErrorStream() != null) {
-                StringBuilder sb = new StringBuilder();
-                try (BufferedReader br = new BufferedReader(
-                        new InputStreamReader(conn.getErrorStream(), StandardCharsets.UTF_8))) {
-                    String line;
-                    while ((line = br.readLine()) != null) sb.append(line);
-                }
-                Log.e(TAG, "Error body: " + sb);
+            if (conn.getErrorStream() == null) return "";
+            StringBuilder sb = new StringBuilder();
+            try (BufferedReader br = new BufferedReader(
+                    new InputStreamReader(conn.getErrorStream(), StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = br.readLine()) != null) sb.append(line);
             }
-        } catch (Exception ignored) { /* best-effort */ }
+            return sb.toString().trim();
+        } catch (Exception ignored) {
+            return "";
+        }
     }
 }
