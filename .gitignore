@@ -4,44 +4,51 @@
 build/
 **/build/
 
+# Android
+*.iml
+*.apk
+*.aab
+local.properties
+captures/
+.cxx/
+.externalNativeBuild/
+**/generated/
+**/intermediates/
+**/tmp/
+
+# Android Studio / IntelliJ
+.idea/
+.kotlin/
+
 # Node
 node_modules/
 
 # Expo
 .expo/
 
-# Android
-*.apk
-*.aab
-
 # macOS
 .DS_Store
 
 # Logs
 *.log
-.gradle/
-.gradle-user-home/
-.idea/
-.kotlin/
+
+# VS Code
 .vscode/
-build/
-*.iml
+
+# Signing / secrets
 *.keystore
 *.jks
-local.properties
-captures/
-.cxx/
-.externalNativeBuild/
-**/build/
-**/generated/
-**/intermediates/
-**/tmp/
+.env
+.env.*
+
+# Backend generated/local data
 backend/icps.db
 backend/map.json
 exported_nodes_db.csv
 nodes_db.csv
 backend/.env
-.env
+
+# Build output
 /.build-output
 
 # Test coverage
