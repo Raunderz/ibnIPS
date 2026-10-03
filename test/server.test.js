@@ -184,4 +184,12 @@ test('standard security headers are present', async () => {
   assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
   assert.equal(response.headers.get('x-frame-options'), 'SAMEORIGIN');
   assert.ok(response.headers.get('content-security-policy'));
+  assert.equal(
+    response.headers.get('cross-origin-opener-policy'),
+    'same-origin-allow-popups'
+  );
+  assert.equal(
+    response.headers.get('referrer-policy'),
+    'strict-origin-when-cross-origin'
+  );
 });

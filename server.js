@@ -95,7 +95,9 @@ app.use(
         formAction: ["'self'"],
         frameAncestors: ["'self'"]
       }
-    }
+    },
+    crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
+    referrerPolicy: { policy: 'strict-origin-when-cross-origin' }
   })
 );
 /*
