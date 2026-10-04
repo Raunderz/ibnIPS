@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>KIIT Auth</title>
+
+  <script
+    src="https://accounts.google.com/gsi/client"
+    nonce="__CSP_NONCE__"
+    async
+    defer
+  ></script>
+
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 700px;
+      margin: 60px auto;
+      padding: 20px;
+    }
+
+    .card {
+      border: 1px solid #ddd;
+      border-radius: 12px;
+      padding: 25px;
+    }
+
+    #signin-status {
+      margin-top: 12px;
+      font-size: 14px;
+      color: #666;
+    }
+
+    #result {
+      margin-top: 25px;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .key {
+      background: #f4f4f4;
+      padding: 12px;
+      border-radius: 8px;
+      font-family: monospace;
+      word-break: break-all;
+    }
+
+    button {
+      padding: 10px 16px;
+      margin-top: 15px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+
+<body>
+
+  <div class="card">
+    <h1>KIIT Auth</h1>
+
+    <p>Sign in using your KIIT Google account.</p>
+
+    <div id="google-signin"></div>
+
+    <!--
+      Rendered as HTML rather than set by script on purpose: if the inline
+      script is blocked (a Content-Security-Policy nonce mismatch, for
+      example) nothing can update this, so the message has to be in the markup
+      to avoid leaving a silently empty page. The script clears it on success.
+    -->
+    <p id="signin-status">Loading Google Sign-In...</p>
+
+    <div id="result"></div>
+  </div>
+
+  <script nonce="__CSP_NONCE__">
+    const GOOGLE_CLIENT_ID = __GOOGLE_CLIENT_ID__;
+
+    let shouldRotate = false;
+
+    async function handleGoogleResponse(response) {
+      try {
+        const result = document.getElementById('result');
+
+        /*
+         * When the OAuth client's "Authorized JavaScript origins" does not
+         * include the origin this page is served from, Google still fires the
+         * callback but hands back no credential. Posting that empty value
+         * only earns a confusing 400, so name the real cause instead and
+         * report the exact origin that needs authorising.
+         */
+        if (!response || !response.credential) {
+          result.textContent =
+            'Google returned no credential for this site.\n\n' +
+            'That means the OAuth client is not authorised for this origin.\n' +
+            'Add this exact origin under "Authorized JavaScript origins" in ' +
+            'Google Cloud Console > APIs & Services > Credentials > ' +
+            'OAuth client ID ' + GOOGLE_CLIENT_ID + ':\n\n' +
+            window.location.origin + '\n\n' +
+            'The scheme, host and port must all match. Note that Google treats ' +
+            'localhost and 127.0.0.1 as different origins, and that changes ' +
+            'when you change the port.';
+
+          return;
+        }
+
+        result.textContent = 'Signing in...';
+
+        const apiResponse = await fetch('/auth/google', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            credential: response.credential,
+            rotate: shouldRotate
+          })
+        });
+
+        const data = await apiResponse.json();
+
+        if (!apiResponse.ok) {
+          result.textContent = data.error || 'Authentication failed';
+          return;
+        }
+
+        shouldRotate = false;
+
+        let html = `
+          <h2>Welcome ${escapeHtml(data.user.name || '')}</h2>
+          <p>Email: ${escapeHtml(data.user.email)}</p>
+        `;
+
+        if (data.apiKey) {
+          html += `
+            <h3>Your API Key</h3>
+
+            <p>
+              <strong>Save this key now.</strong>
+              It will not be shown again.
+            </p>
+
+            <div class="key">
+              ${escapeHtml(data.apiKey)}
+            </div>
+
+            <p>
+              Prefix: ${escapeHtml(data.apiKeyPrefix)}
+            </p>
+          `;
+        } else {
+          html += `
+            <p>
+              Existing API key:
+              <strong>${escapeHtml(data.apiKeyPrefix)}</strong>
+            </p>
+
+            <button id="rotate-button">
+              Rotate API Key
+            </button>
+          `;
+        }
+
+        result.innerHTML = html;
+
+        const rotateButton = document.getElementById('rotate-button');
+
+        if (rotateButton) {
+          rotateButton.addEventListener('click', rotateKey);
+        }
+
+      } catch (error) {
+        console.error(error);
+
+        document.getElementById('result').textContent =
+          'Something went wrong.';
+      }
+    }
+
+    function rotateKey() {
+      shouldRotate = true;
+
+      if (window.google?.accounts?.id) {
+        window.google.accounts.id.prompt();
+      }
+    }
+
+    function escapeHtml(value) {
+      return String(value)
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;');
+    }
+
+    function setSignInStatus(message) {
+      const status = document.getElementById('signin-status');
+
+      if (status) {
+        status.textContent = message;
+      }
+    }
+
+    function initializeGoogleSignIn(attempt = 0) {
+      if (!window.google?.accounts?.id) {
+        /*
+         * Bounded retry: ad blockers and offline networks can stop the GIS
+         * script from ever loading, and an unbounded poll would spin forever
+         * with no way for the user to tell what went wrong.
+         */
+        if (attempt >= 50) {
+          setSignInStatus(
+            'Could not load Google Sign-In after 5 seconds. This is usually ' +
+            'an ad blocker or privacy extension blocking accounts.google.com. ' +
+            'Disable it for this page, or check your connection, then reload.'
+          );
+
+          return;
+        }
+
+        setSignInStatus('Loading Google Sign-In...');
+
+        setTimeout(() => initializeGoogleSignIn(attempt + 1), 100);
+        return;
+      }
+
+      try {
+        google.accounts.id.initialize({
+          client_id: GOOGLE_CLIENT_ID,
+
+          callback: handleGoogleResponse,
+
+          auto_select: false
+        });
+
+        google.accounts.id.renderButton(
+          document.getElementById('google-signin'),
+          {
+            type: 'standard',
+            size: 'large',
+            theme: 'outline',
+            text: 'sign_in_with',
+            shape: 'rectangular'
+          }
+        );
+
+        setSignInStatus('');
+      } catch (error) {
+        /*
+         * renderButton throws when the client ID is not authorised for this
+         * origin, or when the ID is malformed. Surface that instead of
+         * leaving an empty box with no explanation.
+         */
+        setSignInStatus(
+          'Google Sign-In could not be initialised: ' +
+          (error && error.message ? error.message : 'unknown error') +
+          '. Check that GOOGLE_CLIENT_ID on the server lists this origin.'
+        );
+
+        console.error(error);
+      }
+    }
+
+    initializeGoogleSignIn();
+  </script>
+
+</body>
+</html>
