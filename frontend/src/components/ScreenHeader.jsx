@@ -1,5 +1,6 @@
 import { ArrowLeft } from 'lucide-react'
 import IconButton from './IconButton.jsx'
+import RefreshButton from './RefreshButton.jsx'
 
 export default function ScreenHeader({
   title,
@@ -7,6 +8,7 @@ export default function ScreenHeader({
   backTo = '/',
   showBack = true,
   trailing = null,
+  onRefresh,
 }) {
   return (
     <header className="shrink-0 border-b border-white/8 bg-ink-950/92 px-3 pt-[max(0.5rem,env(safe-area-inset-top))] backdrop-blur-xl">
@@ -25,6 +27,8 @@ export default function ScreenHeader({
           ) : null}
         </div>
         {trailing}
+        <RefreshButton onRefresh={onRefresh} />
+        <RefreshButton hard label="Reload app" />
       </div>
     </header>
   )

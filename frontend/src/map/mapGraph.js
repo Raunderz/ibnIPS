@@ -71,6 +71,10 @@ class MinHeap {
 }
 
 export function sortNodes(nodes) {
+  if (!Array.isArray(nodes)) {
+    return []
+  }
+
   return [...nodes].sort(
     (first, second) =>
       first.floor - second.floor ||
@@ -82,7 +86,7 @@ export function sortNodes(nodes) {
 export function getFloors(nodes) {
   const floors = new Set()
 
-  for (const node of nodes) {
+  for (const node of Array.isArray(nodes) ? nodes : []) {
     floors.add(node.floor)
   }
 
@@ -92,7 +96,7 @@ export function getFloors(nodes) {
 export function getFloorCounts(nodes) {
   const counts = new Map()
 
-  for (const node of nodes) {
+  for (const node of Array.isArray(nodes) ? nodes : []) {
     counts.set(node.floor, (counts.get(node.floor) ?? 0) + 1)
   }
 
@@ -102,10 +106,18 @@ export function getFloorCounts(nodes) {
 }
 
 export function getFloorNodes(nodes, floor) {
+  if (!Array.isArray(nodes)) {
+    return []
+  }
+
   return nodes.filter((node) => node.floor === floor)
 }
 
 export function getFloorEdges(edges, nodeIds) {
+  if (!Array.isArray(edges) || !nodeIds) {
+    return []
+  }
+
   return edges.filter(
     (edge) => nodeIds.has(edge.fromNode) && nodeIds.has(edge.toNode),
   )
@@ -118,14 +130,20 @@ export function isPositioned(node) {
 export function getNodesById(nodes) {
   const nodesById = new Map()
 
-  for (const node of nodes) {
-    nodesById.set(node.nodeId, node)
+  for (const node of Array.isArray(nodes) ? nodes : []) {
+    if (node && typeof node.nodeId === 'string') {
+      nodesById.set(node.nodeId, node)
+    }
   }
 
   return nodesById
 }
 
 export function getAdjacency(edges) {
+  if (!Array.isArray(edges)) {
+    return new Map()
+  }
+
   const cached = adjacencyCache.get(edges)
 
   if (cached) {
@@ -135,6 +153,10 @@ export function getAdjacency(edges) {
   const adjacency = new Map()
 
   for (const edge of edges) {
+    if (!edge || typeof edge.fromNode !== 'string' || typeof edge.toNode !== 'string') {
+      continue
+    }
+
     if (!adjacency.has(edge.fromNode)) {
       adjacency.set(edge.fromNode, [])
     }
@@ -203,7 +225,7 @@ export function findRoute(edges, fromNodeId, toNodeId, options = {}) {
         continue
       }
 
-      const cost = Math.max(0, link.steps)
+      const cost = Number.isFinite(link.steps) ? Math.max(0, link.steps) : 0
       const candidate = current.priority + cost
       const known = distances.get(link.nodeId)
 
@@ -246,20 +268,25 @@ export function findRoute(edges, fromNodeId, toNodeId, options = {}) {
   return { nodeIds, segments, totalSteps: distances.get(toNodeId) ?? 0 }
 }
 
+function getRouteNodeIds(route) {
+  return Array.isArray(route?.nodeIds) ? route.nodeIds : []
+}
+
 export function getRouteNodeSet(route) {
-  return new Set(route ? route.nodeIds : [])
+  return new Set(getRouteNodeIds(route))
 }
 
 export function getRoutePathsByFloor(route, nodesById) {
   const pathsByFloor = new Map()
+  const nodeIds = getRouteNodeIds(route)
 
-  if (!route || route.nodeIds.length < 2) {
+  if (nodeIds.length < 2 || !nodesById) {
     return pathsByFloor
   }
 
-  for (let index = 1; index < route.nodeIds.length; index += 1) {
-    const from = nodesById.get(route.nodeIds[index - 1])
-    const to = nodesById.get(route.nodeIds[index])
+  for (let index = 1; index < nodeIds.length; index += 1) {
+    const from = nodesById.get(nodeIds[index - 1])
+    const to = nodesById.get(nodeIds[index])
 
     if (!from || !to || from.floor !== to.floor) {
       continue
@@ -276,7 +303,11 @@ export function getRoutePathsByFloor(route, nodesById) {
 export function getRouteFloors(route, nodesById) {
   const floors = new Set()
 
-  for (const nodeId of route ? route.nodeIds : []) {
+  if (!nodesById) {
+    return []
+  }
+
+  for (const nodeId of getRouteNodeIds(route)) {
     const node = nodesById.get(nodeId)
 
     if (node) {
@@ -289,9 +320,18 @@ export function getRouteFloors(route, nodesById) {
 
 export function getConnectedLinks(edges, nodeId) {
   const links = []
+
+  if (!Array.isArray(edges) || !nodeId) {
+    return links
+  }
+
   const seen = new Set()
 
   for (const edge of edges) {
+    if (!edge) {
+      continue
+    }
+
     const outbound = edge.fromNode === nodeId
     const inbound = edge.toNode === nodeId
 
@@ -308,7 +348,7 @@ export function getConnectedLinks(edges, nodeId) {
     seen.add(neighborId)
     links.push({
       neighborId,
-      steps: edge.steps,
+      steps: Number.isFinite(edge.steps) ? edge.steps : 0,
       direction: outbound ? edge.direction : '',
       outbound,
     })

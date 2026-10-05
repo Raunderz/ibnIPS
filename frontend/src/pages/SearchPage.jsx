@@ -2,10 +2,12 @@ import { Compass, MapPinned, SearchX, ServerOff } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import DestinationSheet from '../components/DestinationSheet.jsx'
+import BackendUnconfiguredState from '../components/BackendUnconfiguredState.jsx'
 import EmptyState from '../components/EmptyState.jsx'
 import LocationResultRow from '../components/LocationResultRow.jsx'
 import ScreenHeader from '../components/ScreenHeader.jsx'
 import SearchField from '../components/SearchField.jsx'
+import { isApiConfigured } from '../api/client.js'
 import { useDebouncedValue } from '../hooks/useDebouncedValue.js'
 import { useLocationCatalog } from '../hooks/useLocationCatalog.js'
 import { useRecentDestinations } from '../hooks/useRecentDestinations.js'
@@ -23,6 +25,7 @@ export default function SearchPage() {
   const inputRef = useRef(null)
   const catalogQuery = useLocationCatalog()
   const { items: recentItems } = useRecentDestinations()
+  const apiConfigured = isApiConfigured()
 
   const catalog = catalogQuery.data
   const nodes = useMemo(() => catalog?.nodes ?? EMPTY_NODES, [catalog])
@@ -103,10 +106,13 @@ export default function SearchPage() {
     <div className="app-canvas screen-fill flex flex-col text-slate-100">
       <ScreenHeader
         title="Search"
+        onRefresh={() => catalogQuery.refetch()}
         subtitle={
-          catalogQuery.data
-            ? `${getLocationCountLabel(nodes.length)} from the campus map`
-            : 'Loading campus data'
+          apiConfigured
+            ? catalogQuery.data
+              ? `${getLocationCountLabel(nodes.length)} from the campus map`
+              : 'Loading campus data'
+            : 'Backend address not set'
         }
       />
 
@@ -131,18 +137,22 @@ export default function SearchPage() {
         ) : null}
 
         <div className="mt-4">
-          {catalogQuery.isPending ? (
+          {catalogQuery.isLoading ? (
             <ul className="space-y-2" aria-hidden="true">
               {skeletonRows.map((row) => (
                 <li key={row} className="h-16 animate-pulse rounded-2xl bg-ink-850" />
               ))}
             </ul>
+          ) : !apiConfigured ? (
+            <BackendUnconfiguredState />
           ) : catalogQuery.isError ? (
             <EmptyState
               icon={ServerOff}
               tone="danger"
               title="Campus data unavailable"
-              description={catalogQuery.error.message}
+              description={
+                catalogQuery.error?.message ?? 'The campus catalog could not be loaded.'
+              }
               action={
                 <button
                   type="button"

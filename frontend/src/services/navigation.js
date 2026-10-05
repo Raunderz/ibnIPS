@@ -101,26 +101,58 @@ export function createNavigationService(nodes, edges) {
 }
 
 export function loadNavigationState() {
+  if (typeof window === 'undefined') {
+    return null
+  }
+
   try {
-    const stored = localStorage.getItem(NAVIGATION_STORAGE_KEY)
-    if (stored) {
-      return JSON.parse(stored)
+    const stored = window.localStorage.getItem(NAVIGATION_STORAGE_KEY)
+
+    if (!stored) {
+      return null
+    }
+
+    const parsed = JSON.parse(stored)
+
+    if (
+      !parsed ||
+      typeof parsed !== 'object' ||
+      typeof parsed.destinationId !== 'string' ||
+      typeof parsed.sourceId !== 'string'
+    ) {
+      return null
+    }
+
+    return {
+      ...parsed,
+      currentSegmentIndex: Number.isInteger(parsed.currentSegmentIndex)
+        ? Math.max(0, parsed.currentSegmentIndex)
+        : 0,
+      isActive: Boolean(parsed.isActive),
     }
   } catch {
+    return null
   }
-  return null
 }
 
 export function saveNavigationState(state) {
+  if (typeof window === 'undefined') {
+    return
+  }
+
   try {
-    localStorage.setItem(NAVIGATION_STORAGE_KEY, JSON.stringify(state))
+    window.localStorage.setItem(NAVIGATION_STORAGE_KEY, JSON.stringify(state))
   } catch {
   }
 }
 
 export function clearNavigationState() {
+  if (typeof window === 'undefined') {
+    return
+  }
+
   try {
-    localStorage.removeItem(NAVIGATION_STORAGE_KEY)
+    window.localStorage.removeItem(NAVIGATION_STORAGE_KEY)
   } catch {
   }
 }
@@ -129,7 +161,10 @@ export function createNavigationState(destinationId, sourceId, route) {
   return {
     destinationId,
     sourceId,
-    route,
+    totalSteps: Number.isFinite(route?.totalSteps) ? route.totalSteps : 0,
+    totalSegments: Number.isInteger(route?.totalSegments)
+      ? route.totalSegments
+      : (route?.segments?.length ?? 0),
     currentSegmentIndex: 0,
     isActive: false,
     startedAt: null,

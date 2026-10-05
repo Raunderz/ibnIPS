@@ -136,7 +136,6 @@ export default function LoginScreen() {
           <View style={styles.footer}>
             <BackendStatusChip
               state={backend.state}
-              baseUrl={backend.baseUrl}
               onPress={() => router.push('/server')}
             />
           </View>

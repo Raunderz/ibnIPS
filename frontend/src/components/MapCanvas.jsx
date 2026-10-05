@@ -119,8 +119,8 @@ function DestinationMarker({ node }) {
 
 export default function MapCanvas({
   ref,
-  nodes,
-  edges,
+  nodes = [],
+  edges = [],
   selectedNodeId = null,
   startNodeId = null,
   currentNodeId = null,
@@ -278,6 +278,12 @@ export default function MapCanvas({
 
   function startPinch() {
     const [first, second] = [...pointersRef.current.values()]
+
+    if (!first || !second) {
+      pinchRef.current = null
+      return
+    }
+
     const start = toMapPoint(
       (first.clientX + second.clientX) / 2,
       (first.clientY + second.clientY) / 2,
@@ -312,7 +318,11 @@ export default function MapCanvas({
       clientX: event.clientX,
       clientY: event.clientY,
     })
-    event.currentTarget.setPointerCapture(event.pointerId)
+
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId)
+    } catch {
+    }
 
     if (pointersRef.current.size === 1) {
       const origin = transformRef.current
@@ -345,6 +355,12 @@ export default function MapCanvas({
 
     if (pinchRef.current && pointersRef.current.size >= 2) {
       const [first, second] = [...pointersRef.current.values()]
+
+      if (!first || !second) {
+        pinchRef.current = null
+        return
+      }
+
       const center = toMapPoint(
         (first.clientX + second.clientX) / 2,
         (first.clientY + second.clientY) / 2,
@@ -381,8 +397,40 @@ export default function MapCanvas({
     )
   }
 
+  function releasePointers() {
+    pointersRef.current.clear()
+    panRef.current = null
+    pinchRef.current = null
+  }
+
+  useEffect(() => {
+    const handleRelease = () => {
+      if (pointersRef.current.size === 0) {
+        releasePointers()
+      }
+    }
+
+    const handleBlur = () => releasePointers()
+
+    window.addEventListener('pointerup', handleRelease)
+    window.addEventListener('pointercancel', handleRelease)
+    window.addEventListener('blur', handleBlur)
+
+    return () => {
+      window.removeEventListener('pointerup', handleRelease)
+      window.removeEventListener('pointercancel', handleRelease)
+      window.removeEventListener('blur', handleBlur)
+      releasePointers()
+    }
+  }, [])
+
   function handlePointerUp(event) {
     pointersRef.current.delete(event.pointerId)
+
+    try {
+      event.currentTarget.releasePointerCapture?.(event.pointerId)
+    } catch {
+    }
 
     if (pointersRef.current.size < 2) {
       pinchRef.current = null
@@ -530,7 +578,7 @@ export default function MapCanvas({
         className="h-full w-full touch-none select-none"
         role="img"
         aria-label={`Campus map with ${nodes.length} locations${
-          route ? ` and a route of ${route.totalSteps} steps` : ''
+          Number.isFinite(route?.totalSteps) ? ` and a route of ${route.totalSteps} steps` : ''
         }`}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}

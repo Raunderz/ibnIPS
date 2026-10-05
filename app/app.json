@@ -3,7 +3,7 @@
     "name": "ibnIPS",
     "slug": "ibnips-mobile",
     "scheme": "ibnips",
-    "version": "1.0.0",
+    "version": "1.0.3",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -20,6 +20,7 @@
     },
     "android": {
       "package": "in.kiit.ibnips",
+      "versionCode": 4,
       "adaptiveIcon": {
         "backgroundColor": "#0B1220",
         "foregroundImage": "./assets/android-icon-foreground.png",

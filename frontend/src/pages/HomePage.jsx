@@ -2,7 +2,9 @@ import { ArrowRight, Clock3, LocateFixed, MapPinned, Search, X } from 'lucide-re
 import { useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import BackendStatusChip from '../components/BackendStatusChip.jsx'
+import BackendUnconfiguredState from '../components/BackendUnconfiguredState.jsx'
 import EmptyState from '../components/EmptyState.jsx'
+import { isApiConfigured } from '../api/client.js'
 import { useLocationCatalog } from '../hooks/useLocationCatalog.js'
 import { useRecentDestinations } from '../hooks/useRecentDestinations.js'
 import { getFloors } from '../map/mapGraph.js'
@@ -46,6 +48,7 @@ function RecentRow({ node }) {
 export default function HomePage() {
   const catalogQuery = useLocationCatalog()
   const { items: recentItems, clear: clearRecents } = useRecentDestinations()
+  const apiConfigured = isApiConfigured()
 
   const catalog = catalogQuery.data
   const nodes = useMemo(() => catalog?.nodes ?? EMPTY_NODES, [catalog])
@@ -150,9 +153,13 @@ export default function HomePage() {
           Campus map
         </h2>
 
-        {catalogQuery.isPending ? (
+        {catalogQuery.isLoading ? (
           <div className="mt-2.5 space-y-2" aria-hidden="true">
             <div className="h-24 animate-pulse rounded-card bg-ink-850" />
+          </div>
+        ) : !apiConfigured ? (
+          <div className="mt-2.5">
+            <BackendUnconfiguredState />
           </div>
         ) : catalogQuery.isError ? (
           <div className="mt-2.5">
@@ -160,7 +167,9 @@ export default function HomePage() {
               icon={MapPinned}
               tone="danger"
               title="Map data unavailable"
-              description={catalogQuery.error.message}
+              description={
+                catalogQuery.error?.message ?? 'The campus catalog could not be loaded.'
+              }
               action={
                 <button
                   type="button"

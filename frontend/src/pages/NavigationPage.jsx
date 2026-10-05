@@ -2,10 +2,13 @@ import { Footprints, LocateFixed, MapPinned, Navigation, ServerOff, WifiOff } fr
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom'
 import EmptyState from '../components/EmptyState.jsx'
+import BackendUnconfiguredState from '../components/BackendUnconfiguredState.jsx'
 import IconButton from '../components/IconButton.jsx'
 import MapCanvas from '../components/MapCanvas.jsx'
 import MapFloatingControls from '../components/MapFloatingControls.jsx'
 import NavigationBottomSheet from '../components/NavigationBottomSheet.jsx'
+import RefreshButton from '../components/RefreshButton.jsx'
+import { isApiConfigured } from '../api/client.js'
 import { useNavigation } from '../hooks/useNavigation.js'
 import { getFloorNodes, getNodesById } from '../map/mapGraph.js'
 import { getFloorLabel, getLocationTitle } from '../utils/location.js'
@@ -16,6 +19,34 @@ const LEGEND = [
   { label: 'Destination', color: '#fbbf24' },
   { label: 'Current step', color: '#fbbf24' },
 ]
+
+function BackChevron() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M15 5l-7 7 7 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+function NavHeader({ backTo, title, subtitle, onRefresh }) {
+  return (
+    <div className="flex items-center gap-2">
+      <IconButton label="Back to map" to={backTo}>
+        <BackChevron />
+      </IconButton>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-extrabold tracking-[-0.02em] text-white">
+          {title}
+        </p>
+        {subtitle ? (
+          <p className="truncate text-[11px] text-slate-400">{subtitle}</p>
+        ) : null}
+      </div>
+      <RefreshButton onRefresh={onRefresh} />
+      <RefreshButton hard label="Reload app" />
+    </div>
+  )
+}
 
 export default function NavigationPage() {
   const [searchParams] = useSearchParams()
@@ -42,7 +73,13 @@ export default function NavigationPage() {
     stopNavigation,
   } = useNavigation(nodeId, startId)
 
+  const refreshCatalog = useCallback(
+    () => catalogQuery.refetch(),
+    [catalogQuery],
+  )
+
   const nodesById = useMemo(() => getNodesById(nodes), [nodes])
+  const apiConfigured = isApiConfigured()
 
   const initialFloor = useMemo(() => {
     if (routeDetails) {
@@ -54,7 +91,8 @@ export default function NavigationPage() {
   const [activeFloor, setActiveFloor] = useState(initialFloor)
 
   const displayFloor = useMemo(() => {
-    if (activeFloor !== null) return activeFloor
+    if (activeFloor !== null && activeFloor !== undefined) return activeFloor
+
     if (routeDetails) {
       const currentNode = currentSegment
         ? nodesById.get(currentSegment.toNodeId)
@@ -62,9 +100,10 @@ export default function NavigationPage() {
       if (currentNode && routeDetails.routeFloors.includes(currentNode.floor)) {
         return currentNode.floor
       }
-      return routeDetails.routeFloors[0]
+      return routeDetails.routeFloors[0] ?? initialFloor ?? null
     }
-    return initialFloor
+
+    return initialFloor ?? null
   }, [activeFloor, routeDetails, currentSegment, destinationNode, nodesById, initialFloor])
 
   const displayNodes = useMemo(
@@ -118,26 +157,34 @@ export default function NavigationPage() {
     setShowSourcePicker(false)
   }, [navigate, nodeId])
 
-if (!nodeId) {
+  if (!nodeId) {
     return <Navigate to="/map" replace />
   }
 
-  if (catalogQuery.isPending) {
+  if (apiConfigured && catalogQuery.isLoading) {
     return (
       <div className="app-canvas screen-fill flex flex-col overflow-hidden text-slate-100">
         <div className="shrink-0 px-3 pt-[max(0.5rem,env(safe-area-inset-top))] pb-2">
-          <div className="flex items-center gap-2">
-            <IconButton label="Back to map" to={backTo}>
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path d="M15 5l-7 7 7 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            </IconButton>
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-extrabold tracking-[-0.02em] text-white">Loading navigation</p>
-            </div>
-          </div>
+          <NavHeader
+            backTo={backTo}
+            title="Loading navigation"
+            onRefresh={refreshCatalog}
+          />
         </div>
         <div className="flex-1 animate-pulse bg-ink-850" />
+      </div>
+    )
+  }
+
+  if (!apiConfigured) {
+    return (
+      <div className="app-canvas screen-fill flex flex-col overflow-hidden text-slate-100">
+        <div className="shrink-0 px-3 pt-[max(0.5rem,env(safe-area-inset-top))] pb-2">
+          <NavHeader backTo={backTo} title="Navigation" onRefresh={refreshCatalog} />
+        </div>
+        <div className="screen-scroll flex-1 px-3 pt-6">
+          <BackendUnconfiguredState />
+        </div>
       </div>
     )
   }
@@ -146,24 +193,18 @@ if (!nodeId) {
     return (
       <div className="app-canvas screen-fill flex flex-col overflow-hidden text-slate-100">
         <div className="shrink-0 px-3 pt-[max(0.5rem,env(safe-area-inset-top))] pb-2">
-          <div className="flex items-center gap-2">
-            <IconButton label="Back to map" to={backTo}>
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path d="M15 5l-7 7 7 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            </IconButton>
-          </div>
+          <NavHeader backTo={backTo} title="Navigation" onRefresh={refreshCatalog} />
         </div>
         <div className="screen-scroll flex-1 px-3 pt-6">
           <EmptyState
             icon={ServerOff}
             tone="danger"
             title="Campus data unavailable"
-            description={catalogQuery.error.message}
+            description={catalogQuery.error?.message ?? 'The campus catalog could not be loaded.'}
             action={
               <button
                 type="button"
-                onClick={() => catalogQuery.refetch()}
+                onClick={refreshCatalog}
                 className="inline-flex min-h-11 items-center rounded-2xl border border-white/12 bg-white/5 px-4 text-sm font-semibold text-white active:bg-white/10"
               >
                 Try again
@@ -179,13 +220,7 @@ if (!nodeId) {
     return (
       <div className="app-canvas screen-fill flex flex-col overflow-hidden text-slate-100">
         <div className="shrink-0 px-3 pt-[max(0.5rem,env(safe-area-inset-top))] pb-2">
-          <div className="flex items-center gap-2">
-            <IconButton label="Back to map" to={backTo}>
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path d="M15 5l-7 7 7 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            </IconButton>
-          </div>
+          <NavHeader backTo={backTo} title="Navigation" onRefresh={refreshCatalog} />
         </div>
         <div className="screen-scroll flex-1 px-3 pt-6">
           <EmptyState
@@ -222,25 +257,16 @@ if (!nodeId) {
   return (
     <div className="app-canvas screen-fill flex flex-col overflow-hidden text-slate-100">
       <div className="shrink-0 px-3 pt-[max(0.5rem,env(safe-area-inset-top))] pb-2">
-        <div className="flex items-center gap-2">
-          <IconButton label="Back to map" to={backTo}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M15 5l-7 7 7 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </IconButton>
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-extrabold tracking-[-0.02em] text-white">
-              {destinationNode ? `To ${getLocationTitle(destinationNode)}` : 'Navigation'}
-            </p>
-            <p className="truncate text-[11px] text-slate-400">
-              {routeDetails
-                ? `${routeDetails.totalSteps} steps · ${routeDetails.totalSegments} moves`
-                : destinationNode
-                ? getFloorLabel(destinationNode.floor)
-                : 'Campus map'}
-            </p>
-          </div>
-        </div>
+        <NavHeader
+          backTo={backTo}
+          title={`To ${getLocationTitle(destinationNode)}`}
+          subtitle={
+            routeDetails
+              ? `${routeDetails.totalSteps} steps · ${routeDetails.totalSegments} moves`
+              : getFloorLabel(destinationNode.floor)
+          }
+          onRefresh={refreshCatalog}
+        />
 
         {floors.length > 1 && (
           <div className="mt-2 flex items-center gap-2 overflow-x-auto pb-1">

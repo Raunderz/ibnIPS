@@ -3,6 +3,7 @@ import { ArrowLeft, LoaderCircle, LogIn, ShieldCheck } from 'lucide-react'
 import { useState } from 'react'
 import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom'
 import BrandMark from '../components/BrandMark.jsx'
+import RefreshButton from '../components/RefreshButton.jsx'
 import { authenticate } from '../api/auth.js'
 import { useAuthSession } from '../hooks/useAuthSession.js'
 import { saveAuthSession } from '../services/authSession.js'
@@ -68,13 +69,17 @@ export default function LoginPage() {
       <div className="mx-auto flex min-h-[calc(100dvh-2rem)] w-full max-w-md flex-col">
         <div className="flex items-center justify-between gap-3">
           <BrandMark />
-          <Link
-            to="/"
-            aria-label="Back to home"
-            className="grid size-11 shrink-0 place-items-center rounded-2xl border border-white/10 bg-white/5 text-slate-200 transition-colors active:bg-white/10 active:text-white"
-          >
-            <ArrowLeft size={19} aria-hidden="true" />
-          </Link>
+          <div className="flex items-center gap-2">
+            <RefreshButton />
+            <RefreshButton hard label="Reload app" />
+            <Link
+              to="/"
+              aria-label="Back to home"
+              className="grid size-11 shrink-0 place-items-center rounded-2xl border border-white/10 bg-white/5 text-slate-200 transition-colors active:bg-white/10 active:text-white"
+            >
+              <ArrowLeft size={19} aria-hidden="true" />
+            </Link>
+          </div>
         </div>
 
         <div className="my-auto py-10">

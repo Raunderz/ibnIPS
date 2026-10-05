@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage'
 
 const STORAGE_KEY = 'ibnips.api.baseUrl'
+const ACCESS_KEY_STORAGE_KEY = 'ibnips.api.accessKey'
 
 /**
  * Used when no environment variable and no saved override exist, so a fresh
@@ -9,6 +10,7 @@ const STORAGE_KEY = 'ibnips.api.baseUrl'
 export const FALLBACK_BASE_URL = 'https://ibnips.onrender.com'
 
 let overrideBaseUrl = null
+let overrideAccessKey = null
 let hydrated = false
 let hydratedWaiters = []
 const configListeners = new Set()
@@ -19,6 +21,18 @@ const configListeners = new Set()
  */
 function readEnvBaseUrl() {
   const configured = process.env.EXPO_PUBLIC_API_BASE_URL
+  return typeof configured === 'string' ? configured.trim() : ''
+}
+
+/**
+ * The backend's `AUTH_KEY`, which it now requires on every sign-in.
+ *
+ * There is deliberately no fallback: shipping a shared secret in the bundle
+ * would publish it to anyone who unzips the APK, and a build with no key is
+ * better than a build that silently authenticates as nobody.
+ */
+function readEnvAccessKey() {
+  const configured = process.env.EXPO_PUBLIC_API_ACCESS_KEY
   return typeof configured === 'string' ? configured.trim() : ''
 }
 
@@ -78,6 +92,18 @@ export function getApiBaseUrlSource() {
   return normalizeBaseUrl(readEnvBaseUrl()) ? 'env' : 'fallback'
 }
 
+/**
+ * The shared secret the backend requires on `POST /api/auth`, or an empty
+ * string when the build carries none.
+ */
+export function getApiAccessKey() {
+  return overrideAccessKey ?? readEnvAccessKey()
+}
+
+export function hasApiAccessKey() {
+  return getApiAccessKey().length > 0
+}
+
 export function isApiConfigHydrated() {
   return hydrated
 }
@@ -93,6 +119,14 @@ export async function hydrateApiConfig() {
     overrideBaseUrl = normalizeBaseUrl(stored)
   } catch {
     overrideBaseUrl = null
+  }
+
+  try {
+    const storedKey = await AsyncStorage.getItem(ACCESS_KEY_STORAGE_KEY)
+    overrideAccessKey =
+      typeof storedKey === 'string' && storedKey.trim() ? storedKey.trim() : null
+  } catch {
+    overrideAccessKey = null
   }
 
   hydrated = true
@@ -167,4 +201,45 @@ export async function clearApiBaseUrlOverride() {
   emitConfigChange()
 
   return getApiBaseUrl()
+}
+
+/**
+ * Persists the shared access key, so the backend's `AUTH_KEY` can be entered on
+ * a device instead of being baked into a build.
+ */
+export async function setApiAccessKeyOverride(value) {
+  await hydrateApiConfig()
+
+  const trimmed = typeof value === 'string' ? value.trim() : ''
+
+  if (!trimmed) {
+    throw new TypeError('Enter the access key from the ibnIPS server.')
+  }
+
+  overrideAccessKey = trimmed
+
+  try {
+    await AsyncStorage.setItem(ACCESS_KEY_STORAGE_KEY, trimmed)
+  } catch {
+    // An in-memory key still works for this session.
+  }
+
+  emitConfigChange()
+
+  return trimmed
+}
+
+export async function clearApiAccessKeyOverride() {
+  await hydrateApiConfig()
+  overrideAccessKey = null
+
+  try {
+    await AsyncStorage.removeItem(ACCESS_KEY_STORAGE_KEY)
+  } catch {
+    // Nothing else to do.
+  }
+
+  emitConfigChange()
+
+  return getApiAccessKey()
 }

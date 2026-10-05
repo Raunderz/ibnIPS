@@ -2,11 +2,14 @@ import { MapPinned, Search, ServerOff } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import EmptyState from '../components/EmptyState.jsx'
+import BackendUnconfiguredState from '../components/BackendUnconfiguredState.jsx'
 import FloorSelector from '../components/FloorSelector.jsx'
 import IconButton from '../components/IconButton.jsx'
 import MapBottomSheet from '../components/MapBottomSheet.jsx'
 import MapCanvas from '../components/MapCanvas.jsx'
 import MapFloatingControls from '../components/MapFloatingControls.jsx'
+import RefreshButton from '../components/RefreshButton.jsx'
+import { isApiConfigured } from '../api/client.js'
 import { useLocationCatalog } from '../hooks/useLocationCatalog.js'
 import { useMapRoute } from '../hooks/useMapRoute.js'
 import { useRecentDestinations } from '../hooks/useRecentDestinations.js'
@@ -42,6 +45,7 @@ export default function MapPage() {
   const { record } = useRecentDestinations()
   const [floorChoice, setFloorChoice] = useState(null)
   const mapRef = useRef(null)
+  const apiConfigured = isApiConfigured()
 
   const catalog = catalogQuery.data
   const nodes = useMemo(() => catalog?.nodes ?? EMPTY_NODES, [catalog])
@@ -56,27 +60,47 @@ export default function MapPage() {
 
   const selectedNode = selectedId ? (nodesById.get(selectedId) ?? null) : null
   const startNode = startId ? (nodesById.get(startId) ?? null) : null
-  const activeFloor = selectedNode?.floor ?? startNode?.floor ?? floorChoice ?? floors[0] ?? null
+  const activeFloor =
+    selectedNode?.floor ??
+    startNode?.floor ??
+    floorChoice ??
+    floors[0] ??
+    null
 
   const { route, routeFloors } = useMapRoute(nodes, edges, startId, selectedId)
+
+  // Edges can name rooms the node list no longer publishes, so a route may end
+  // up with no resolvable floor. Falling straight to routeFloors[0] then drew
+  // "Floor undefined" and the map looked empty, so keep the active floor as
+  // the fallback instead.
+  const displayFloor = useMemo(() => {
+    if (!route) {
+      return activeFloor
+    }
+
+    if (routeFloors.includes(activeFloor)) {
+      return activeFloor
+    }
+
+    return routeFloors[0] ?? activeFloor
+  }, [route, routeFloors, activeFloor])
   const links = useMemo(
     () => (selectedNode ? getConnectedLinks(edges, selectedNode.nodeId) : []),
     [edges, selectedNode],
   )
 
-  const displayFloor = route
-    ? (routeFloors.includes(activeFloor) ? activeFloor : routeFloors[0])
-    : activeFloor
   const displayNodes = useMemo(
     () => getFloorNodes(nodes, displayFloor),
     [nodes, displayFloor],
   )
 
-  const viewState = getMapViewState({
-    isPending: catalogQuery.isPending,
-    isError: catalogQuery.isError,
-    nodeCount: nodes.length,
-  })
+  const viewState = apiConfigured
+    ? getMapViewState({
+        isPending: catalogQuery.isLoading,
+        isError: catalogQuery.isError,
+        nodeCount: nodes.length,
+      })
+    : 'unconfigured'
 
   useEffect(() => {
     if (selectedNode) {
@@ -154,6 +178,8 @@ export default function MapPage() {
             <Search size={17} aria-hidden="true" />
             Search campus locations
           </Link>
+          <RefreshButton onRefresh={() => catalogQuery.refetch()} />
+          <RefreshButton hard label="Reload app" />
         </div>
 
         <FloorSelector
@@ -170,13 +196,19 @@ export default function MapPage() {
       <div className="relative min-h-0 flex-1">
         {viewState === 'loading' ? (
           <div className="absolute inset-0 animate-pulse bg-ink-850" />
+        ) : viewState === 'unconfigured' ? (
+          <div className="screen-scroll absolute inset-0 px-3 pt-6">
+            <BackendUnconfiguredState />
+          </div>
         ) : viewState === 'error' ? (
           <div className="screen-scroll absolute inset-0 px-3 pt-6">
             <EmptyState
               icon={ServerOff}
               tone="danger"
               title="Map unavailable"
-              description={catalogQuery.error.message}
+              description={
+                catalogQuery.error?.message ?? 'The campus map could not be loaded.'
+              }
               action={
                 <button
                   type="button"

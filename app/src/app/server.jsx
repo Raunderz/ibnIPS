@@ -36,7 +36,7 @@ export default function ServerScreen() {
       <View style={styles.content}>
         <View>
           <SectionTitle>Address</SectionTitle>
-          <BackendSettingsCard />
+          <BackendSettingsCard showAddress />
         </View>
 
         <Text style={[typography.caption, styles.note, { color: theme.textSubtle }]}>

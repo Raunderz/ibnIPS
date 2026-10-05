@@ -109,7 +109,6 @@ export default function HomeScreen() {
 
         <BackendStatusChip
           state={backend.state}
-          baseUrl={backend.baseUrl}
           onPress={() => router.push('/account')}
         />
 
@@ -279,7 +278,7 @@ export default function HomeScreen() {
               icon={TriangleAlert}
               tone="danger"
               title="Cannot reach the backend"
-              message={`${backend.baseUrl} did not respond. Check the address on the Account screen, or that the ibnIPS server is running.`}
+              message="The ibnIPS server could not be reached. Check your connection, then try again."
               action={
                 <Button
                   label="Try again"

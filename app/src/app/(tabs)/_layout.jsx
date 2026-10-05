@@ -1,10 +1,18 @@
 import { Tabs } from 'expo-router'
 import { CircleUser, Map, Navigation, Radar } from 'lucide-react-native'
-import { Platform } from 'react-native'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useTheme } from '../../theme/index.js'
+
+const BASE_TAB_BAR_HEIGHT = 62
+const BASE_TAB_BAR_PADDING_BOTTOM = 8
 
 export default function TabsLayout() {
   const theme = useTheme()
+  // Android's system navigation bar (back / home / recents, or the gesture
+  // pill) is drawn over the app window. Without this inset the tab bar sits at
+  // the very bottom of the window and its labels land underneath those buttons.
+  const insets = useSafeAreaInsets()
+  const bottomInset = insets.bottom
 
   return (
     <Tabs
@@ -16,9 +24,9 @@ export default function TabsLayout() {
           backgroundColor: theme.surface,
           borderTopColor: theme.border,
           borderTopWidth: 1,
-          height: Platform.OS === 'ios' ? 84 : 62,
+          height: BASE_TAB_BAR_HEIGHT + bottomInset,
           paddingTop: 6,
-          paddingBottom: Platform.OS === 'ios' ? 28 : 8,
+          paddingBottom: BASE_TAB_BAR_PADDING_BOTTOM + bottomInset,
         },
         tabBarLabelStyle: {
           fontSize: 11,

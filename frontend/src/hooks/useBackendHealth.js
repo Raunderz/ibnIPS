@@ -10,5 +10,9 @@ export function useBackendHealth() {
     queryFn: ({ signal }) => getBackendHealth(signal),
     enabled: isApiConfigured(),
     staleTime: 30_000,
+    gcTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: true,
+    retry: 1,
   })
 }

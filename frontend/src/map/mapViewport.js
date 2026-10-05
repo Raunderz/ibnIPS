@@ -22,17 +22,27 @@ export function getBounds(nodes) {
   let maxY = Number.NEGATIVE_INFINITY
 
   for (const node of nodes) {
+    if (!Number.isFinite(node.x) || !Number.isFinite(node.y)) {
+      continue
+    }
+
     minX = Math.min(minX, node.x)
     minY = Math.min(minY, node.y)
     maxX = Math.max(maxX, node.x)
     maxY = Math.max(maxY, node.y)
   }
 
+  if (!Number.isFinite(minX) || !Number.isFinite(minY)) {
+    return null
+  }
+
   return { minX, minY, maxX, maxY }
 }
 
 export function getMapView(nodes, padding = 140) {
-  if (nodes.length === 0) {
+  const bounds = getBounds(nodes)
+
+  if (!bounds) {
     return {
       minX: -padding,
       minY: -padding,
@@ -40,8 +50,6 @@ export function getMapView(nodes, padding = 140) {
       height: padding * 2,
     }
   }
-
-  const bounds = getBounds(nodes)
 
   return {
     minX: bounds.minX - padding,
@@ -77,6 +85,10 @@ export function getFitView(
   } else {
     height = content.height + (coverHeight - content.height) * crop
     width = height * aspect
+  }
+
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+    return content
   }
 
   return {

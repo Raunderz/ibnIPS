@@ -1,37 +1,47 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useLocationCatalog } from './useLocationCatalog.js'
-import { createNavigationService, createNavigationState, loadNavigationState, saveNavigationState, clearNavigationState } from '../services/navigation.js'
+import {
+  createNavigationService,
+  createNavigationState,
+  loadNavigationState,
+  saveNavigationState,
+  clearNavigationState,
+} from '../services/navigation.js'
 import { getLocationTitle } from '../utils/location.js'
+
+const EMPTY_LIST = []
+
+function clampSegmentIndex(value, segmentCount) {
+  if (!Number.isInteger(value) || value < 0) {
+    return 0
+  }
+
+  if (segmentCount === 0) {
+    return 0
+  }
+
+  return Math.min(value, segmentCount - 1)
+}
 
 export function useNavigation(destinationId, sourceId) {
   const catalogQuery = useLocationCatalog()
-  const nodes = useMemo(() => catalogQuery.data?.nodes ?? [], [catalogQuery.data])
-  const edges = useMemo(() => catalogQuery.data?.edges ?? [], [catalogQuery.data])
+  const nodes = useMemo(() => catalogQuery.data?.nodes ?? EMPTY_LIST, [catalogQuery.data])
+  const edges = useMemo(() => catalogQuery.data?.edges ?? EMPTY_LIST, [catalogQuery.data])
 
   const navigationService = useMemo(
     () => createNavigationService(nodes, edges),
-    [nodes, edges]
+    [nodes, edges],
   )
 
-  const initialNavigationState = useMemo(() => {
+  const [navigationState, setNavigationState] = useState(() => {
     const saved = loadNavigationState()
+
     if (saved && saved.destinationId === destinationId && saved.sourceId === sourceId) {
       return saved
     }
-    if (destinationId && sourceId) {
-      const route = navigationService.calculateRoute(sourceId, destinationId)
-      if (route) {
-        const routeDetails = navigationService.getRouteDetails(route)
-        if (routeDetails) {
-          return createNavigationState(destinationId, sourceId, routeDetails)
-        }
-      }
-    }
-    return null
-  }, [destinationId, sourceId, navigationService])
 
-  const [navigationState, setNavigationState] = useState(initialNavigationState)
-  const [isNavigating, setIsNavigating] = useState(false)
+    return null
+  })
 
   const route = useMemo(() => {
     if (!destinationId || !sourceId) {
@@ -44,37 +54,74 @@ export function useNavigation(destinationId, sourceId) {
     if (!route) {
       return null
     }
-    return navigationService.getRouteDetails(route)
+
+    const details = navigationService.getRouteDetails(route)
+
+    if (!details || !Array.isArray(details.segments) || !Array.isArray(details.routeFloors)) {
+      return null
+    }
+
+    return details
   }, [navigationService, route])
 
+  useEffect(() => {
+    if (navigationState) {
+      saveNavigationState(navigationState)
+    } else {
+      clearNavigationState()
+    }
+  }, [navigationState])
+
+  const isNavigating = Boolean(
+    navigationState?.isActive &&
+      navigationState.destinationId === destinationId &&
+      navigationState.sourceId === sourceId,
+  )
+
+  const segments = routeDetails?.segments ?? EMPTY_LIST
+
   const currentSegment = useMemo(() => {
-    if (!routeDetails || !routeDetails.segments.length) {
+    if (segments.length === 0) {
       return null
     }
-    const index = navigationState?.currentSegmentIndex ?? 0
-    return routeDetails.segments[Math.min(index, routeDetails.segments.length - 1)] ?? null
-  }, [routeDetails, navigationState])
+
+    const index = clampSegmentIndex(
+      navigationState?.currentSegmentIndex,
+      segments.length,
+    )
+
+    return segments[index] ?? null
+  }, [segments, navigationState])
 
   const nextSegment = useMemo(() => {
-    if (!routeDetails || !routeDetails.segments.length) {
+    if (segments.length === 0) {
       return null
     }
-    const index = (navigationState?.currentSegmentIndex ?? 0) + 1
-    return routeDetails.segments[index] ?? null
-  }, [routeDetails, navigationState])
+
+    const index = clampSegmentIndex(
+      navigationState?.currentSegmentIndex,
+      segments.length,
+    ) + 1
+
+    return segments[index] ?? null
+  }, [segments, navigationState])
 
   const progress = useMemo(() => {
-    if (!routeDetails || !routeDetails.segments.length) {
+    const total = segments.length
+
+    if (total === 0) {
       return { current: 0, total: 0, percentage: 0 }
     }
-    const current = (navigationState?.currentSegmentIndex ?? 0) + 1
-    const total = routeDetails.segments.length
+
+    const current =
+      clampSegmentIndex(navigationState?.currentSegmentIndex, total) + 1
+
     return {
-      current: Math.min(current, total),
+      current,
       total,
       percentage: Math.round((current / total) * 100),
     }
-  }, [routeDetails, navigationState])
+  }, [segments, navigationState])
 
   const destinationNode = useMemo(() => {
     if (!destinationId) return null
@@ -89,61 +136,60 @@ export function useNavigation(destinationId, sourceId) {
   const startNavigation = useCallback(() => {
     if (!routeDetails) return false
 
-    const newState = createNavigationState(destinationId, sourceId, routeDetails)
-    newState.isActive = true
-    newState.startedAt = Date.now()
-    newState.currentSegmentIndex = 0
+    setNavigationState({
+      ...createNavigationState(destinationId, sourceId, routeDetails),
+      isActive: true,
+      startedAt: Date.now(),
+      currentSegmentIndex: 0,
+    })
 
-    setNavigationState(newState)
-    setIsNavigating(true)
-    saveNavigationState(newState)
     return true
   }, [destinationId, sourceId, routeDetails])
 
   const nextStep = useCallback(() => {
-    setNavigationState((prev) => {
-      if (!prev || !routeDetails) return prev
+    setNavigationState((previous) => {
+      if (!previous) return previous
 
-      const nextIndex = prev.currentSegmentIndex + 1
-      if (nextIndex >= routeDetails.segments.length) {
-        const completed = { ...prev, isActive: false, completedAt: Date.now() }
-        clearNavigationState()
-        setIsNavigating(false)
-        return completed
+      const index = clampSegmentIndex(
+        previous.currentSegmentIndex,
+        segments.length,
+      )
+      const nextIndex = index + 1
+
+      if (nextIndex >= segments.length) {
+        return { ...previous, isActive: false, completedAt: Date.now() }
       }
 
-      const updated = { ...prev, currentSegmentIndex: nextIndex }
-      saveNavigationState(updated)
-      return updated
+      return { ...previous, currentSegmentIndex: nextIndex }
     })
-  }, [routeDetails])
+  }, [segments.length])
 
   const previousStep = useCallback(() => {
-    setNavigationState((prev) => {
-      if (!prev || prev.currentSegmentIndex <= 0) return prev
+    setNavigationState((previous) => {
+      if (!previous) return previous
 
-      const updated = { ...prev, currentSegmentIndex: prev.currentSegmentIndex - 1 }
-      saveNavigationState(updated)
-      return updated
+      const index = clampSegmentIndex(
+        previous.currentSegmentIndex,
+        segments.length,
+      )
+
+      if (index <= 0) return previous
+
+      return { ...previous, currentSegmentIndex: index - 1 }
     })
-  }, [])
+  }, [segments.length])
 
   const stopNavigation = useCallback(() => {
-    setNavigationState((prev) => {
-      if (!prev) return null
-      const stopped = { ...prev, isActive: false }
-      clearNavigationState()
-      setIsNavigating(false)
-      return stopped
+    setNavigationState((previous) => {
+      if (!previous) return previous
+      return { ...previous, isActive: false }
     })
   }, [])
 
   const resetNavigation = useCallback(() => {
-    setNavigationState((prev) => {
-      if (!prev) return null
-      const reset = { ...prev, currentSegmentIndex: 0 }
-      saveNavigationState(reset)
-      return reset
+    setNavigationState((previous) => {
+      if (!previous) return previous
+      return { ...previous, currentSegmentIndex: 0 }
     })
   }, [])
 

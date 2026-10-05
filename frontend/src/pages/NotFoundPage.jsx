@@ -1,12 +1,19 @@
 import { ArrowLeft, Compass } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import BrandMark from '../components/BrandMark.jsx'
+import RefreshButton from '../components/RefreshButton.jsx'
 
 export default function NotFoundPage() {
   return (
     <div className="app-canvas min-h-dvh px-4 pt-[max(0.75rem,env(safe-area-inset-top))] pb-[max(1.25rem,env(safe-area-inset-bottom))] text-slate-100">
       <div className="mx-auto flex min-h-[calc(100dvh-2rem)] w-full max-w-md flex-col">
-        <BrandMark />
+        <div className="flex items-center justify-between gap-3">
+          <BrandMark />
+          <div className="flex items-center gap-2">
+            <RefreshButton />
+            <RefreshButton hard label="Reload app" />
+          </div>
+        </div>
         <div className="my-auto py-12 text-center">
           <span className="mx-auto grid size-16 place-items-center rounded-3xl bg-brand-500/12 text-brand-300">
             <Compass size={30} aria-hidden="true" />

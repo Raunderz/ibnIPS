@@ -2,6 +2,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { QueryClientProvider } from '@tanstack/react-query'
 import App from './App.jsx'
+import AppErrorBoundary from './components/AppErrorBoundary.jsx'
 import { queryClient } from './api/queryClient.js'
 import './index.css'
 
@@ -14,7 +15,9 @@ if (!rootElement) {
 createRoot(rootElement).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <App />
+      <AppErrorBoundary>
+        <App />
+      </AppErrorBoundary>
     </QueryClientProvider>
   </StrictMode>,
 )

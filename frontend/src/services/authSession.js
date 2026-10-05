@@ -91,7 +91,22 @@ function readStorage() {
     }
 
     const parsed = JSON.parse(storedValue)
-    return createSession(parsed.token, parsed.userId)
+
+    if (!parsed || typeof parsed !== 'object' || typeof parsed.token !== 'string') {
+      removeStoredSession()
+      cachedEndReason = 'invalid'
+      return null
+    }
+
+    const session = createSession(parsed.token, parsed.userId)
+
+    if (session.expiresAt <= Date.now()) {
+      removeStoredSession()
+      cachedEndReason = 'expired'
+      return null
+    }
+
+    return session
   } catch (error) {
     removeStoredSession()
     cachedEndReason = error?.code === 'expired' ? 'expired' : 'invalid'
@@ -127,15 +142,23 @@ function scheduleExpiry(session) {
   }, delay)
 }
 
-export function getAuthSession() {
-  if (!storageRead) {
-    storageRead = true
-    cachedSession = readStorage()
-
-    if (cachedSession) {
-      scheduleExpiry(cachedSession)
-    }
+function hydrateSession() {
+  if (storageRead || typeof window === 'undefined') {
+    return cachedSession
   }
+
+  storageRead = true
+  cachedSession = readStorage()
+
+  if (cachedSession) {
+    scheduleExpiry(cachedSession)
+  }
+
+  return cachedSession
+}
+
+export function getAuthSession() {
+  hydrateSession()
 
   if (cachedSession && cachedSession.expiresAt <= Date.now()) {
     return null

@@ -1,6 +1,7 @@
 import { Home, Map as MapIcon, Search, UserRound } from 'lucide-react'
 import { Link, NavLink } from 'react-router-dom'
 import BrandMark from './BrandMark.jsx'
+import RefreshButton from './RefreshButton.jsx'
 import { useAuthSession } from '../hooks/useAuthSession.js'
 import { getUserInitials } from '../utils/location.js'
 
@@ -43,10 +44,17 @@ export function AppTopBar() {
             </NavLink>
           ))}
         </nav>
+        {/* Overall app controls: refresh every cached screen, or start over. */}
+        <RefreshButton
+          size="sm"
+          label="Refresh all app data"
+          className="ml-auto lg:ml-0"
+        />
+        <RefreshButton hard size="sm" label="Reload app" />
         <Link
           to={session ? '/account' : '/login'}
           aria-label={session ? 'Open account' : 'Sign in'}
-          className="ml-auto grid size-11 shrink-0 place-items-center rounded-2xl border border-white/10 bg-white/5 text-[13px] font-bold text-white transition-colors duration-150 active:bg-white/10 lg:ml-0"
+          className="grid size-10 shrink-0 place-items-center rounded-xl border border-white/10 bg-white/5 text-[13px] font-bold text-white transition-colors duration-150 active:bg-white/10 sm:size-11 sm:rounded-2xl lg:ml-0"
         >
           {session ? getUserInitials(session.userId) : <UserRound size={19} />}
         </Link>

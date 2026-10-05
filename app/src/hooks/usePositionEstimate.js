@@ -11,6 +11,23 @@ import {
 /** Android permits four scans per two minutes; stay well inside that. */
 const MIN_SCAN_INTERVAL_MS = 15_000
 
+/**
+ * Why a scan produced no fix, keyed by the matcher's status.
+ *
+ * `empty-scan` is the one that used to read as a generic failure. It almost
+ * always means Android returned redacted or empty BSSIDs, so it gets its own
+ * instruction about Wi-Fi and location services.
+ */
+const MATCH_ERROR_MESSAGES = {
+  'empty-scan':
+    'No usable Wi-Fi networks came back from the scan. Turn Wi-Fi on, leave location services switched on, and scan again.',
+  'no-fingerprints':
+    'The campus map has no Wi-Fi fingerprints yet, so ibnIPS cannot place you. Pick your room on the map instead.',
+  'out-of-range':
+    'None of the Wi-Fi networks around you are in the campus map. ibnIPS only works on campus Wi-Fi.',
+  default: 'Could not read a usable Wi-Fi scan. Move around and try again.',
+}
+
 export const POSITION_STATUS = Object.freeze({
   idle: 'idle',
   scanning: 'scanning',
@@ -96,11 +113,7 @@ export function usePositionEstimate(nodes, fingerprints) {
 
       if (match.status !== 'ok') {
         setStatus(POSITION_STATUS.error)
-        setError(
-          match.status === 'out-of-range'
-            ? 'None of the Wi-Fi networks around you are in the campus map. ibnIPS only works on campus Wi-Fi.'
-            : 'Could not read a usable Wi-Fi scan. Move around and try again.',
-        )
+        setError(MATCH_ERROR_MESSAGES[match.status] ?? MATCH_ERROR_MESSAGES.default)
         setResult(null)
         return null
       }

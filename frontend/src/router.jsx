@@ -7,6 +7,8 @@ async function loadRoute(loader) {
   return { Component: routeModule.default }
 }
 
+const inlineErrorElement = <RouteErrorPage inline />
+
 export const router = createBrowserRouter([
   {
     HydrateFallback: RouteLoading,
@@ -14,20 +16,24 @@ export const router = createBrowserRouter([
     lazy: () => loadRoute(() => import('./routes/RootRoute.jsx')),
     children: [
       {
+        errorElement: inlineErrorElement,
         lazy: () => loadRoute(() => import('./layouts/AppLayout.jsx')),
         children: [
           {
             index: true,
+            errorElement: inlineErrorElement,
             lazy: () => loadRoute(() => import('./pages/HomePage.jsx')),
           },
           {
             path: 'account',
+            errorElement: inlineErrorElement,
             lazy: () => loadRoute(() => import('./routes/AccountRoute.jsx')),
           },
         ],
       },
       {
         path: 'login',
+        errorElement: inlineErrorElement,
         lazy: () => loadRoute(() => import('./pages/LoginPage.jsx')),
       },
       {
@@ -36,18 +42,22 @@ export const router = createBrowserRouter([
       },
       {
         path: 'search',
+        errorElement: inlineErrorElement,
         lazy: () => loadRoute(() => import('./pages/SearchPage.jsx')),
       },
       {
         path: 'map',
+        errorElement: inlineErrorElement,
         lazy: () => loadRoute(() => import('./pages/MapPage.jsx')),
       },
       {
         path: 'navigate',
+        errorElement: inlineErrorElement,
         lazy: () => loadRoute(() => import('./pages/NavigationPage.jsx')),
       },
       {
         path: '*',
+        errorElement: inlineErrorElement,
         lazy: () => loadRoute(() => import('./pages/NotFoundPage.jsx')),
       },
     ],
