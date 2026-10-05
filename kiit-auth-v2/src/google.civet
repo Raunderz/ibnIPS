@@ -1,0 +1,131 @@
+// google.civet
+// Google ID token verification.
+//
+// The whole tenant boundary rests on this function. A token is accepted only
+// when Google has signed it, it was minted for this exact OAuth client, and
+// the address it carries is on the allowed domain. Nothing the caller sends is
+// taken on trust, which is the property the shared-access-key model could not
+// offer: there, anyone holding the key could claim any roll number.
+
+import { createRemoteJWKSet, jwtVerify } from 'jose'
+import { isAllowedEmail, rollNumberFrom } from './domain.civet'
+
+/**
+ * Google's signing keys, fetched on first use and cached by `jose` for the
+ * lifetime of the instance.
+ *
+ * Built lazily rather than at module scope so importing this file never
+ * performs I/O — which keeps cold starts and the health check cheap.
+ */
+let jwks: ReturnType<typeof createRemoteJWKSet> | null = null
+
+function keys()
+  if jwks is null
+    jwks = createRemoteJWKSet(
+      new URL('https://www.googleapis.com/oauth2/v3/certs')
+    )
+
+  jwks
+
+export class GoogleAuthError extends Error
+  /** True when the caller is authenticated but not on the allowed domain. */
+  domainRejected: boolean
+
+  constructor(message: string, domainRejected: boolean = false)
+    super(message)
+    this.name = 'GoogleAuthError'
+    this.domainRejected = domainRejected
+
+export type VerifiedUser =
+  googleSub: string
+  email: string
+  rollNumber: string
+  name: string
+  picture: string
+
+/**
+ * Verify an ID token and resolve it to a tenant identity.
+ *
+ * Checks, in order of what each one rules out:
+ *
+ *  - signature, against Google's published keys
+ *  - `aud`, so a token minted for another client on the same domain is refused
+ *  - `iss`, so a token from some other issuer cannot be replayed here
+ *  - `exp` / `nbf`, handled by the library
+ *  - `email_verified`, so an unverified address cannot become an identity
+ *  - the address domain, anchored on "@" rather than a bare suffix match
+ *  - `hd`, when Google supplies it
+ */
+export async function verifyGoogleIdToken(
+  idToken: string,
+  clientId: string,
+  allowedDomain: string,
+): Promise<VerifiedUser>
+  let payload: Record<string, unknown>
+
+  try
+    const verified = await jwtVerify(idToken, keys(), {
+      audience: clientId
+      // Both spellings are issued in practice depending on how the token was
+      // minted, and either is a legitimate Google issuer.
+      issuer: ['https://accounts.google.com', 'accounts.google.com']
+    })
+
+    payload = verified.payload as Record<string, unknown>
+  catch cause
+    const reason = cause instanceof Error ? cause.message : String(cause)
+    throw new GoogleAuthError('invalid or expired Google credential: ' + reason)
+
+  const sub = payload.sub
+  const email = payload.email
+
+  if typeof sub is not 'string' or sub is ''
+    throw new GoogleAuthError('Google token carries no subject')
+
+  if typeof email is not 'string' or email is ''
+    throw new GoogleAuthError('Google account carries no email address')
+
+  // Google's own guidance is that `email_verified` is the authoritative signal
+  // for this claim; `hd` is a convenience hint and is not a security control.
+  if payload.email_verified is not true
+    throw new GoogleAuthError('Google email address is not verified')
+
+  const normalised = email.toLowerCase()
+
+  if isAllowedEmail(normalised, allowedDomain) is false
+    throw new GoogleAuthError(
+      'only @' + allowedDomain + ' accounts are allowed',
+      true,
+    )
+
+  const hostedDomain = payload.hd
+
+  // Optional, and treated as advisory: its absence is not a failure, because
+  // consumer Google accounts have no hosted domain at all. When it IS present
+  // it must agree, since a mismatch means the token describes a different
+  // Workspace tenant than the address claims.
+  if typeof hostedDomain is 'string'
+    if hostedDomain.toLowerCase() != allowedDomain
+      throw new GoogleAuthError(
+        'Google Workspace domain is not ' + allowedDomain,
+        true,
+      )
+
+  const rollNumber = rollNumberFrom(normalised)
+
+  if rollNumber is null
+    throw new GoogleAuthError(
+      'email address has no usable local part',
+      true,
+    )
+
+  const name = typeof payload.name is 'string' ? payload.name : ''
+  const picture = typeof payload.picture is 'string' ? payload.picture : ''
+
+  {
+    googleSub: sub
+    email: normalised
+    rollNumber: rollNumber
+    name: name
+    picture: picture
+  }

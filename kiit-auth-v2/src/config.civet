@@ -1,0 +1,126 @@
+// config.civet
+// Environment handling.
+//
+// Returns a Result rather than throwing at import time. On Vercel every branch
+// gets its own deployment, and a preview build with no secrets configured would
+// crash on import — taking the whole preview URL down instead of showing a
+// readable "not configured" page.
+//
+// Nothing here connects to anything. Validation is pure and synchronous so it
+// can be unit tested without a database or a network.
+
+import { err, ok, valueOf, type Result } from './result.civet'
+
+export type Config =
+  tursoUrl: string
+  tursoToken: string
+  googleClientId: string
+  allowedDomain: string
+  codeBytes: number
+  trustProxy: number
+  nodeEnv: string
+
+export type Env = Record<string, string | undefined>
+
+/**
+ * Read an integer from the environment, bounded.
+ *
+ * Rejects non-integers and out-of-range values at load rather than letting them
+ * become a confusing runtime failure: a `TRUST_PROXY` of `true` would otherwise
+ * be coerced to 1 and silently trust one proxy hop, which is the difference
+ * between a working rate limit and no rate limit.
+ */
+function readInt(
+  env: Env,
+  name: string,
+  fallback: number,
+  min: number,
+  max: number
+): Result<number, string>
+  const raw = env[name]
+
+  if raw is undefined or raw is ''
+    return ok(fallback)
+
+  const value = Number(raw)
+
+  if Number.isInteger(value) is false or value < min or value > max
+    return err(
+      name + ' must be an integer between ' + String(min) + ' and ' +
+      String(max) + ' (got "' + raw + '")'
+    )
+
+  return ok(value)
+
+/**
+ * Validate the tenant domain.
+ *
+ * This value decides who may authenticate, so a malformed or over-broad one must
+ * fail at load rather than quietly widen or break the check later.
+ *
+ * At least three labels are required. With only two, "ac.in" validates — which
+ * would admit every college under that suffix rather than one institution, and
+ * it is an easy value to reach for by accident when someone means a specific
+ * college. Requiring three also rejects the suffix trap "kiit.ac.in.evil.test",
+ * which is well-formed but points somewhere else entirely.
+ */
+export function normalizeDomain(raw: string): Result<string, string>
+  const domain = raw.trim().toLowerCase()
+
+  if domain is ''
+    return err('ALLOWED_DOMAIN must not be empty')
+
+  unless /^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.){2,}[a-z]{2,}$/.test(domain)
+    return err(
+      'ALLOWED_DOMAIN must be a bare domain with at least three labels, ' +
+      'such as "kiit.ac.in" (got "' + raw + '")'
+    )
+
+  return ok(domain)
+
+/**
+ * Build a Config from an environment map, reporting every problem found rather
+ * than only the first, so a misconfigured deployment can be fixed in one pass.
+ */
+export function loadConfig(env: Env): Result<Config, string>
+  const problems: string[] = []
+
+  const tursoUrl = env.DATABASE_URL ?? env.TURSO_DATABASE_URL
+  const tursoToken = env.DATABASE_TOKEN ?? env.TURSO_AUTH_TOKEN
+  const googleClientId = env.GOOGLE_CLIENT_ID
+
+  if tursoUrl is undefined or tursoUrl is ''
+    problems.push('DATABASE_URL is required')
+
+  if tursoToken is undefined or tursoToken is ''
+    problems.push('DATABASE_TOKEN is required')
+
+  if googleClientId is undefined or googleClientId is ''
+    problems.push('GOOGLE_CLIENT_ID is required')
+
+  const domain = normalizeDomain(env.ALLOWED_DOMAIN ?? 'kiit.ac.in')
+  const bytes = readInt(env, 'ACCESS_CODE_BYTES', 24, 16, 64)
+  const trustProxy = readInt(env, 'TRUST_PROXY', 0, 0, 10)
+
+  if domain.ok is false
+    problems.push(domain.error)
+
+  if bytes.ok is false
+    problems.push(bytes.error)
+
+  if trustProxy.ok is false
+    problems.push(trustProxy.error)
+
+  if problems.length > 0
+    return err(problems.join('; '))
+
+  // Unreachable fallbacks above: any failure has already returned.
+  return ok({
+    tursoUrl: tursoUrl as string
+    tursoToken: tursoToken as string
+    googleClientId: googleClientId as string
+    allowedDomain: valueOf(domain, 'kiit.ac.in')
+    codeBytes: valueOf(bytes, 24)
+    trustProxy: valueOf(trustProxy, 0)
+    nodeEnv: env.NODE_ENV ?? 'development'
+  })

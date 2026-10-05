@@ -1,0 +1,62 @@
+// domain.civet
+// Turning a verified Google email into a tenant identity.
+//
+// Kept free of config, database and network dependencies so the rules that
+// decide who may authenticate can be tested directly.
+
+export type ParsedEmail =
+  local: string
+  domain: string
+
+/**
+ * Split an email on its last "@".
+ *
+ * A local part may legally contain "@" when quoted, so splitting on the last
+ * separator is the correct reading of RFC 5322 rather than the first.
+ */
+export function splitEmail(email: string): ParsedEmail | null
+  const at = email.lastIndexOf('@')
+
+  if at <= 0 or at is email.length - 1
+    return null
+
+  {
+    local: email.slice(0, at)
+    domain: email.slice(at + 1)
+  }
+
+/**
+ * Does this email belong to the allowed domain?
+ *
+ * Anchored on "@" rather than a bare `endsWith` on the domain string, so
+ * "student@notkiit.ac.in" and "attacker@evil.kiit.ac.in.attacker.test" are
+ * both rejected.
+ *
+ * The caller must have lowercased the address first; Google treats the local
+ * part as case-sensitive but domains as case-insensitive, and normalising
+ * once up front keeps the two checks from disagreeing.
+ */
+export function isAllowedEmail(email: string, allowedDomain: string): boolean
+  const parsed = splitEmail(email)
+
+  parsed is not null and parsed.domain is allowedDomain
+
+/**
+ * Derive the identity a code is bound to.
+ *
+ * This is the local part of a Google-verified address — for a student that is
+ * the roll number, e.g. "23b1234" from "23b1234@kiit.ac.in".
+ *
+ * It is deliberately NOT validated against a roll-number format. The value is
+ * opaque to this service: it is a label chosen by the tenant, and the only
+ * thing that gives it meaning is that Google proved the address. Trying to
+ * recognise roll numbers here would reject legitimate faculty addresses like
+ * "firstname.lastname@kiit.ac.in" for no security gain.
+ */
+export function rollNumberFrom(email: string): string | null
+  const parsed = splitEmail(email)
+
+  if parsed is null or parsed.local is ""
+    return null
+
+  parsed.local

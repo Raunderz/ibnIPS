@@ -1,0 +1,93 @@
+import { expect, test } from 'bun:test'
+import {
+  isAllowedEmail
+  rollNumberFrom
+  splitEmail
+} from '../src/domain.civet'
+
+// Callbacks use indentation bodies rather than `=> { ... }`.
+//
+// Civet mis-parses a brace-bodied arrow whose body contains a line beginning
+// with `identifier(`, silently rewriting it as an object property — `test(...)`
+// became `test: test(...)`. The result still ran, but the emitted TypeScript was
+// wrong. Indentation bodies compile as written.
+
+test('splitEmail splits on the last separator', () =>
+    const parsed = splitEmail('23b1234@kiit.ac.in')
+    expect(parsed).not.toBeNull()
+    expect(parsed?.local).toBe('23b1234')
+    expect(parsed?.domain).toBe('kiit.ac.in')
+)
+
+test('splitEmail rejects an address with no local part', () =>
+    expect(splitEmail('@kiit.ac.in')).toBeNull()
+)
+
+test('splitEmail rejects an address with no domain', () =>
+    expect(splitEmail('23b1234@')).toBeNull()
+)
+
+test('splitEmail rejects an address with no separator', () =>
+    expect(splitEmail('23b1234')).toBeNull()
+)
+
+test('splitEmail splits on the last @ so a quoted local part keeps its shape', () =>
+    const parsed = splitEmail('we"ird@local@kiit.ac.in')
+    expect(parsed?.domain).toBe('kiit.ac.in')
+    expect(parsed?.local).toBe('we"ird@local')
+)
+
+test('isAllowedEmail accepts an address on the domain', () =>
+    expect(isAllowedEmail('23b1234@kiit.ac.in', 'kiit.ac.in')).toBe(true)
+)
+
+// The three cases that matter. A bare endsWith on the domain string passes all
+// of them, which is why the check is anchored on "@".
+test('isAllowedEmail rejects a domain that merely ends with the allowed one', () =>
+    expect(isAllowedEmail('23b1234@notkiit.ac.in', 'kiit.ac.in')).toBe(false)
+)
+
+test('isAllowedEmail rejects an attacker-controlled suffix', () =>
+    expect(
+      isAllowedEmail('student@evil.kiit.ac.in.attacker.test', 'kiit.ac.in')
+    ).toBe(false)
+)
+
+test('isAllowedEmail rejects a subdomain of the allowed domain', () =>
+    expect(isAllowedEmail('23b1234@mail.kiit.ac.in', 'kiit.ac.in')).toBe(false)
+)
+
+test('isAllowedEmail rejects an unrelated domain', () =>
+    expect(isAllowedEmail('23b1234@gmail.com', 'kiit.ac.in')).toBe(false)
+)
+
+test('isAllowedEmail is case sensitive because the caller lowercases first', () =>
+    // Normalising once, up front, keeps the split and the domain check from
+    // disagreeing about the same address.
+    expect(isAllowedEmail('23B1234@KIIT.AC.IN', 'kiit.ac.in')).toBe(false)
+    expect(isAllowedEmail('23b1234@kiit.ac.in'.toLowerCase(), 'kiit.ac.in')).toBe(
+      true
+    )
+)
+
+test('isAllowedEmail rejects a malformed address rather than throwing', () =>
+    expect(isAllowedEmail('', 'kiit.ac.in')).toBe(false)
+    expect(isAllowedEmail('nodomain', 'kiit.ac.in')).toBe(false)
+)
+
+test('rollNumberFrom returns the local part', () =>
+    expect(rollNumberFrom('23b1234@kiit.ac.in')).toBe('23b1234')
+)
+
+// The bound identity is the local part of a Google-verified address. It is
+// deliberately not validated against a roll-number format, so a faculty address
+// stays a usable identity rather than being rejected.
+test('rollNumberFrom accepts a non-roll-number local part', () =>
+    expect(rollNumberFrom('firstname.lastname@kiit.ac.in')).toBe(
+      'firstname.lastname'
+    )
+)
+
+test('rollNumberFrom returns null when there is no usable local part', () =>
+    expect(rollNumberFrom('@kiit.ac.in')).toBeNull()
+)

@@ -1,0 +1,3 @@
+# Lets `bun run` and `bun test` execute .civet sources directly in development.
+# Production builds compile Civet to TypeScript instead (see scripts/check.sh).
+preload = ["./node_modules/@danielx/civet/dist/bun-civet.mjs"]

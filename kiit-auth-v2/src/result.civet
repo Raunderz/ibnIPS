@@ -1,0 +1,39 @@
+// result.civet
+// A two-case return type.
+//
+// Used where a failure is an expected outcome rather than an exception —
+// configuration validation, mostly, which can report several problems at once
+// instead of only the first.
+//
+// The alternatives were both worse here. Throwing loses the ability to
+// accumulate problems, and returning `T | null` cannot distinguish "absent" from
+// "empty" for the string cases this codebase deals in.
+
+export type Ok<T> =
+  ok: true
+  value: T
+
+export type Err<E> =
+  ok: false
+  error: E
+
+export type Result<T, E> = Ok<T> | Err<E>
+
+export function ok<T>(value: T): Ok<T>
+  return { ok: true, value: value }
+
+export function err<E>(error: E): Err<E>
+  return { ok: false, error: error }
+
+/**
+ * The success value, or a fallback when the result is a failure.
+ *
+ * Only for use immediately after a caller has already collected every failure —
+ * it lets a validated value be read without a cast, at the cost of a fallback
+ * that is unreachable by construction.
+ */
+export function valueOf<T, E>(result: Result<T, E>, fallback: T): T
+  if result.ok is true
+    return result.value
+
+  return fallback

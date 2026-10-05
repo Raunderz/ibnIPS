@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KIIT Sign In</title>
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    max-width: 34rem; margin: 3rem auto; padding: 0 1.25rem; line-height: 1.55;
+  }
+  h1 { font-size: 1.4rem; margin-bottom: 0.25rem; }
+  p.sub { margin-top: 0; opacity: 0.7; }
+  #status { min-height: 1.5rem; font-size: 0.9rem; opacity: 0.75; }
+  #status.error { color: #b3261e; opacity: 1; }
+  .key {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    background: rgba(127,127,127,0.14); border-radius: 6px;
+    padding: 0.7rem 0.85rem; word-break: break-all; margin: 0.6rem 0;
+  }
+  button {
+    font: inherit; padding: 0.5rem 0.9rem; border-radius: 6px;
+    border: 1px solid rgba(127,127,127,0.4); background: transparent;
+    cursor: pointer;
+  }
+  button[disabled] { opacity: 0.5; cursor: default; }
+  .warn { font-size: 0.85rem; opacity: 0.75; }
+  hr { border: 0; border-top: 1px solid rgba(127,127,127,0.25); margin: 1.75rem 0; }
+</style>
+</head>
+<body>
+
+<h1>KIIT Sign In</h1>
+<p class="sub">Verifies your Google account, then issues an access code for the app.</p>
+
+<div id="google-signin"></div>
+<p id="status" role="status" aria-live="polite"></p>
+
+<div id="result"></div>
+
+<hr>
+<p class="warn">
+  Your access code is shown once. Store it somewhere safe &mdash; if you lose it
+  you can sign in again to issue a new one.
+</p>
+
+<script nonce="__CSP_NONCE__">
+  // Injected as a complete JSON literal by the server, so a value containing
+  // quotes or angle brackets cannot break out of this script context.
+  const GOOGLE_CLIENT_ID = __GOOGLE_CLIENT_ID__
+
+  const statusEl = document.getElementById('status')
+  const resultEl = document.getElementById('result')
+
+  let shouldRotate = false
+
+  function setStatus(message, isError) {
+    statusEl.textContent = message
+    statusEl.className = isError ? 'error' : ''
+  }
+
+  // Every value interpolated into markup goes through this. The result panel
+  // is built with innerHTML, and it renders a name and an access code that
+  // both originate outside this page.
+  function escapeHtml(value) {
+    return String(value)
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#039;')
+  }
+
+  async function handleGoogleResponse(response) {
+    if (!response.credential) {
+      setStatus('Google did not return a credential. Try again.', true)
+      return
+    }
+
+    setStatus('Signing in...', false)
+    resultEl.textContent = ''
+
+    let apiResponse
+    try {
+      apiResponse = await fetch('/auth/google', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          credential: response.credential,
+          rotate: shouldRotate
+        })
+      })
+    } catch {
+      setStatus('Could not reach the server. Check your connection.', true)
+      return
+    }
+
+    let data
+    try {
+      data = await apiResponse.json()
+    } catch {
+      setStatus('The server sent a response we could not read.', true)
+      return
+    }
+
+    if (!apiResponse.ok) {
+      setStatus(data.error || 'Sign-in failed.', true)
+      return
+    }
+
+    shouldRotate = false
+    setStatus('', false)
+
+    let html = '<h2>Signed in</h2>'
+    html += '<p>' + escapeHtml(data.user.name || data.user.email) + '</p>'
+    html += '<p class="sub">Roll number: ' + escapeHtml(data.user.rollNumber) + '</p>'
+
+    if (data.accessCode) {
+      html += '<h3>Your access code</h3>'
+      html += '<div class="key">' + escapeHtml(data.accessCode) + '</div>'
+      html += '<p class="warn">Shown once. Copy it now.</p>'
+    } else {
+      html += '<p>Your existing access code starts with '
+      html += '<strong>' + escapeHtml(data.accessCodePrefix) + '</strong></p>'
+    }
+
+    html += '<button id="rotate-button">Issue a new access code</button>'
+
+    resultEl.innerHTML = html
+
+    const rotateButton = document.getElementById('rotate-button')
+    if (rotateButton) {
+      rotateButton.addEventListener('click', () => {
+        shouldRotate = true
+        if (window.google && window.google.accounts && window.google.accounts.id) {
+          window.google.accounts.id.prompt()
+        } else {
+          setStatus('Reload the page, then sign in again to issue a new code.', true)
+        }
+      })
+    }
+  }
+
+  function initializeGoogleSignIn(attempt) {
+    const tries = attempt || 0
+
+    if (!window.google || !window.google.accounts || !window.google.accounts.id) {
+      // Bounded retry. Ad blockers and privacy extensions can stop the script
+      // from ever loading, and an unbounded poll would spin forever with no
+      // way for the user to tell what went wrong.
+      if (tries >= 50) {
+        setStatus(
+          'Could not load Google Sign-In after 5 seconds. This is usually an ' +
+          'ad blocker or privacy extension blocking accounts.google.com.',
+          true
+        )
+        return
+      }
+
+      setStatus('Loading Google Sign-In...', false)
+      setTimeout(() => initializeGoogleSignIn(tries + 1), 100)
+      return
+    }
+
+    try {
+      window.google.accounts.id.initialize({
+        client_id: GOOGLE_CLIENT_ID,
+        callback: handleGoogleResponse,
+        auto_select: false
+      })
+
+      window.google.accounts.id.renderButton(
+        document.getElementById('google-signin'),
+        {
+          type: 'standard',
+          size: 'large',
+          theme: 'outline',
+          text: 'sign_in_with',
+          shape: 'rectangular'
+        }
+      )
+
+      setStatus('', false)
+    } catch (error) {
+      // renderButton throws when the client id is not authorised for this
+      // origin, or when it is malformed. Say so rather than leaving an empty
+      // box with no explanation.
+      setStatus(
+        'Google Sign-In could not start: ' +
+        (error && error.message ? error.message : 'unknown error') +
+        '. Check that GOOGLE_CLIENT_ID lists this origin.',
+        true
+      )
+      console.error(error)
+    }
+  }
+
+  initializeGoogleSignIn(0)
+</script>
+
+</body>
+</html>

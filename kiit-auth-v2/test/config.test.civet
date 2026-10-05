@@ -1,0 +1,123 @@
+import { expect, test } from 'bun:test'
+import { loadConfig, normalizeDomain } from '../src/config.civet'
+import { isAllowedEmail } from '../src/domain.civet'
+
+// Every callback uses an indentation body rather than `=> { ... }`.
+//
+// Civet parses a brace-bodied arrow as an object literal whenever a line in its
+// body starts with `identifier(`, so `expect(...).toBe(...)` silently becomes
+// an object property named `toBe`. It still runs, so nothing catches it.
+// Indentation bodies compile as written. Enforced by scripts/check.sh rule 6.
+
+const COMPLETE = {
+  DATABASE_URL: 'libsql://db.example',
+  DATABASE_TOKEN: 'token',
+  GOOGLE_CLIENT_ID: 'client-id',
+}
+
+test('normalizeDomain accepts a bare domain', () =>
+  const result = normalizeDomain('kiit.ac.in')
+  expect(result.ok).toBe(true)
+  expect(result.ok ? result.value : '').toBe('kiit.ac.in')
+)
+
+test('normalizeDomain lowercases and trims', () =>
+  const result = normalizeDomain('  KIIT.AC.IN  ')
+  expect(result.ok ? result.value : '').toBe('kiit.ac.in')
+)
+
+// These are the values that would silently widen or break the tenant check if
+// they were accepted.
+test('normalizeDomain rejects a bare TLD', () =>
+  expect(normalizeDomain('ac.in').ok).toBe(false)
+)
+
+// A wrong-but-well-formed domain is accepted verbatim. That is deliberate and
+// fails closed: it locks everyone out rather than admitting anyone extra. The
+// suffix-trap attack matters for the EMAIL check, not this one, and is covered
+// in domain.test.civet.
+test('normalizeDomain treats a wrong domain as exact, failing closed', () =>
+  const configured = normalizeDomain('kiit.ac.in.evil.test')
+  expect(configured.ok).toBe(true)
+  expect(configured.ok ? configured.value : '').toBe('kiit.ac.in.evil.test')
+
+  // The consequence: a real KIIT address does not match it.
+  expect(
+    isAllowedEmail('23b1234@kiit.ac.in', 'kiit.ac.in.evil.test')
+  ).toBe(false)
+)
+
+test('normalizeDomain rejects an empty value', () =>
+  expect(normalizeDomain('').ok).toBe(false)
+  expect(normalizeDomain('   ').ok).toBe(false)
+)
+
+test('normalizeDomain rejects a value with a scheme or an at sign', () =>
+  expect(normalizeDomain('https://kiit.ac.in').ok).toBe(false)
+  expect(normalizeDomain('@kiit.ac.in').ok).toBe(false)
+)
+
+test('loadConfig accepts a complete environment', () =>
+  const result = loadConfig(COMPLETE)
+  expect(result.ok).toBe(true)
+
+  if result.ok
+    expect(result.value.tursoUrl).toBe('libsql://db.example')
+    expect(result.value.googleClientId).toBe('client-id')
+    expect(result.value.allowedDomain).toBe('kiit.ac.in')
+    expect(result.value.codeBytes).toBe(24)
+    expect(result.value.trustProxy).toBe(0)
+)
+
+test('loadConfig reports every missing variable, not just the first', () =>
+  const result = loadConfig({})
+  expect(result.ok).toBe(false)
+
+  if result.ok is false
+    expect(result.error).toContain('DATABASE_URL')
+    expect(result.error).toContain('DATABASE_TOKEN')
+    expect(result.error).toContain('GOOGLE_CLIENT_ID')
+)
+
+test('loadConfig accepts the newer libsql host form', () =>
+  expect(loadConfig({ ...COMPLETE, DATABASE_URL: 'libsql:db.example' }).ok).toBe(
+    true
+)
+)
+
+test('loadConfig falls back to the Turso-prefixed variable names', () =>
+  const result = loadConfig({
+    TURSO_DATABASE_URL: 'libsql://db.example',
+    TURSO_AUTH_TOKEN: 'token',
+    GOOGLE_CLIENT_ID: 'client-id',
+  })
+  expect(result.ok).toBe(true)
+)
+
+// A non-integer TRUST_PROXY would coerce to a number and silently trust a proxy
+// hop that is not there, which is the difference between a working rate limit
+// and no rate limit.
+test('loadConfig rejects a non-integer TRUST_PROXY', () =>
+  const result = loadConfig({ ...COMPLETE, TRUST_PROXY: 'true' })
+  expect(result.ok).toBe(false)
+  if result.ok is false
+    expect(result.error).toContain('TRUST_PROXY')
+)
+
+test('loadConfig rejects an out-of-range TRUST_PROXY', () =>
+  expect(loadConfig({ ...COMPLETE, TRUST_PROXY: '11' }).ok).toBe(false)
+  expect(loadConfig({ ...COMPLETE, TRUST_PROXY: '-1' }).ok).toBe(false)
+  expect(loadConfig({ ...COMPLETE, TRUST_PROXY: '10' }).ok).toBe(true)
+)
+
+test('loadConfig rejects too little code entropy', () =>
+  expect(loadConfig({ ...COMPLETE, ACCESS_CODE_BYTES: '8' }).ok).toBe(false)
+  expect(loadConfig({ ...COMPLETE, ACCESS_CODE_BYTES: '16' }).ok).toBe(true)
+)
+
+test('loadConfig rejects a malformed ALLOWED_DOMAIN', () =>
+  const result = loadConfig({ ...COMPLETE, ALLOWED_DOMAIN: 'ac.in' })
+  expect(result.ok).toBe(false)
+  if result.ok is false
+    expect(result.error).toContain('ALLOWED_DOMAIN')
+)

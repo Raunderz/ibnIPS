@@ -1,0 +1,102 @@
+// schema.civet
+// Database migrations.
+//
+// Two rules, both learned the hard way from the sibling services:
+//
+// 1. Idempotent DDL only. Every statement is CREATE ... IF NOT EXISTS and is
+//    re-run on every cold start. There is no version ledger, so two services
+//    cannot disagree about what schema the database is at.
+//
+// 2. Table names are namespaced with an `auth_` prefix. This service and the
+//    Gleam backend share one Turso database, and `CREATE TABLE IF NOT EXISTS`
+//    guards a table's EXISTENCE but never its SHAPE. If both services created
+//    a table called `users`, whichever booted first would win and the other
+//    would start cleanly against the wrong columns, failing only later at
+//    query time. Distinct names make that impossible.
+
+/**
+ * Statements in dependency order. Foreign keys are omitted on purpose: the
+ * backend's own tables reference each other, and enforcing them across two
+ * services that migrate independently turns a deploy order into a crash.
+ */
+import { run, type Conn } from './db.civet'
+
+export MIGRATIONS: string[] := [
+  // Identity plus the access code bound to it.
+  //
+  // `code_hash` is UNIQUE so a lookup by digest is an indexed equality match
+  // rather than a scan, which is also what lets the verification path claim
+  // there is no timing signal to hide.
+  //
+  // `roll_number` is UNIQUE because it is the identity a code redeems to. Two
+  // codes must never be able to resolve to the same person, and putting that
+  // in the schema means the invariant holds even if the application logic is
+  // wrong.
+  `CREATE TABLE IF NOT EXISTS auth_identities (
+     id INTEGER PRIMARY KEY AUTOINCREMENT,
+     google_sub TEXT NOT NULL UNIQUE,
+     email TEXT NOT NULL UNIQUE,
+     roll_number TEXT NOT NULL UNIQUE,
+     name TEXT NOT NULL DEFAULT '',
+     picture TEXT NOT NULL DEFAULT '',
+     code_hash TEXT NOT NULL UNIQUE,
+     code_prefix TEXT NOT NULL,
+     code_created_at INTEGER NOT NULL,
+     code_rotated_at INTEGER,
+     code_rotation_count INTEGER NOT NULL DEFAULT 0,
+     revoked_at INTEGER,
+     created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+     last_login_at INTEGER NOT NULL DEFAULT (unixepoch())
+   )`,
+
+  // An index purely to support revoking every code for one identity without a
+  // table scan. SQLite does not index columns named in a UNIQUE constraint
+  // separately, so this has to be declared.
+  `CREATE INDEX IF NOT EXISTS auth_identities_roll
+     ON auth_identities (roll_number)`,
+
+  // Rate limit counters, shared across every serverless instance.
+  //
+  // An in-process counter would be worthless here: instances are recycled
+  // constantly, so the counter resets and the limit is never actually
+  // enforced. Writing it to the database makes the limit global.
+  `CREATE TABLE IF NOT EXISTS auth_rate_limits (
+     bucket TEXT NOT NULL,
+     window_start INTEGER NOT NULL,
+     hits INTEGER NOT NULL DEFAULT 1,
+     PRIMARY KEY (bucket, window_start)
+   )`,
+
+  // Supports the opportunistic sweep of expired windows.
+  `CREATE INDEX IF NOT EXISTS auth_rate_limits_window
+     ON auth_rate_limits (window_start)`,
+]
+
+/**
+ * Run every migration.
+ *
+ * Statements are executed one at a time rather than batched, because each is
+ * its own HTTP request and a single failure should name the statement that
+ * caused it instead of reporting the batch.
+ */
+export async function migrate(conn: Conn): Promise<void>
+  for (const statement of MIGRATIONS)
+    await run(conn, statement)
+  return undefined
+
+/**
+ * Delete rate limit rows from windows that can no longer be hit.
+ *
+ * There is no cron on the free tier, so this is done opportunistically: when a
+ * caller lands in a new window, the stale ones go with it. Best effort — a
+ * failure here must never fail a request, since the rows are inert either way.
+ */
+export async function sweepRateLimits(conn: Conn): Promise<void>
+  try
+    await run(
+      conn,
+      'DELETE FROM auth_rate_limits WHERE window_start < ?',
+      [Math.floor(Date.now() / 1000) - 86400],
+    )
+  catch
+    return undefined

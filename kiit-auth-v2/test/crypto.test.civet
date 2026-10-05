@@ -1,0 +1,106 @@
+import { expect, test } from 'bun:test'
+import {
+  CODE_PREFIX
+  CODE_PREFIX_LENGTH
+  generateCode
+  hashCode
+  isPlausibleCodeFormat
+  safeEqual
+} from '../src/crypto.civet'
+
+// Every callback uses an indentation body rather than `=> { ... }`.
+// See the note in config.test.civet; enforced by scripts/check.sh rule 6.
+
+test('generateCode is prefixed with the marker', () =>
+    expect(generateCode(24).raw.startsWith(CODE_PREFIX)).toBe(true)
+)
+
+test('generateCode carries the requested entropy', () =>
+    // base64url expands 3 bytes to 4 characters.
+    expect(generateCode(24).raw.length).toBe(CODE_PREFIX.length + 32)
+    expect(generateCode(16).raw.length).toBe(CODE_PREFIX.length + 22)
+)
+
+test('generateCode uses only base64url characters', () =>
+  for let i = 0; i < 50; i += 1
+    expect(/^[A-Za-z0-9_-]+$/.test(generateCode(24).raw)).toBe(true)
+
+  // Without this the loop's result array becomes the callback's return value,
+  // which Bun's `test` rejects.
+  return undefined
+)
+
+test('generateCode never repeats', () =>
+  const seen = new Set<string>()
+
+  for let i = 0; i < 500; i += 1
+    seen.add(generateCode(24).hash)
+
+  expect(seen.size).toBe(500)
+)
+
+test('generateCode stores only the digest, never the plaintext', () =>
+  const code = generateCode(24)
+  expect(code.hash).toBe(hashCode(code.raw))
+  expect(code.hash.length).toBe(64)
+  expect(code.hash).not.toContain(code.raw)
+)
+
+test('generateCode prefix matches the head of the raw code', () =>
+  const code = generateCode(24)
+  expect(code.prefix).toBe(code.raw.slice(0, CODE_PREFIX_LENGTH))
+  expect(code.prefix.startsWith(CODE_PREFIX)).toBe(true)
+)
+
+test('hashCode is stable', () =>
+    expect(hashCode('kiit_abc')).toBe(hashCode('kiit_abc'))
+)
+
+test('hashCode differs for different input', () =>
+    expect(hashCode('kiit_abc')).not.toBe(hashCode('kiit_abd'))
+)
+
+// Known vector, so a future change of algorithm cannot pass unnoticed.
+test('hashCode matches the SHA-256 of the input', () =>
+    expect(hashCode('abc')).toBe(
+      'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad'
+    )
+)
+
+test('isPlausibleCodeFormat accepts a generated code', () =>
+    expect(isPlausibleCodeFormat(generateCode(24).raw)).toBe(true)
+)
+
+test('isPlausibleCodeFormat rejects a missing marker', () =>
+    expect(isPlausibleCodeFormat('abc123')).toBe(false)
+)
+
+test('isPlausibleCodeFormat rejects characters outside the alphabet', () =>
+    expect(isPlausibleCodeFormat(CODE_PREFIX + 'not-a-kiit-key!')).toBe(false)
+    expect(isPlausibleCodeFormat(CODE_PREFIX + 'has space')).toBe(false)
+)
+
+test('isPlausibleCodeFormat rejects an empty or marker-only value', () =>
+  expect(isPlausibleCodeFormat('')).toBe(false)
+  expect(isPlausibleCodeFormat(CODE_PREFIX)).toBe(false)
+)
+
+test('isPlausibleCodeFormat rejects an absurdly long value', () =>
+    expect(isPlausibleCodeFormat(CODE_PREFIX + 'a'.repeat(600))).toBe(false)
+)
+
+test('safeEqual matches identical strings', () =>
+    expect(safeEqual('abc', 'abc')).toBe(true)
+)
+
+test('safeEqual rejects differing strings', () =>
+    expect(safeEqual('abc', 'abd')).toBe(false)
+)
+
+test('safeEqual rejects differing lengths', () =>
+    expect(safeEqual('abc', 'abcd')).toBe(false)
+)
+
+test('safeEqual handles empty strings', () =>
+    expect(safeEqual('', '')).toBe(true)
+)

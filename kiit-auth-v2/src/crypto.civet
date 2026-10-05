@@ -1,0 +1,84 @@
+// crypto.civet
+// Access code generation and hashing.
+//
+// Codes are high-entropy random material, so a plain SHA-256 digest is the
+// right primitive here: there is no low-entropy guessing for an attacker to
+// slow down, and the plaintext is not recoverable from the stored digest.
+
+import { createHash, randomBytes } from 'node:crypto'
+
+/**
+ * Every issued code starts with this marker, so an obviously-wrong value can
+ * be rejected without touching the database.
+ */
+export CODE_PREFIX := 'kiit_'
+
+/**
+ * Characters kept as a human-recognisable display prefix: the marker plus a
+ * few characters of the random part.
+ */
+export CODE_PREFIX_LENGTH := 9
+
+export type GeneratedCode =
+  raw: string
+  hash: string
+  prefix: string
+
+/**
+ * Hash a code with SHA-256, hex encoded.
+ */
+export function hashCode(raw: string): string
+  createHash('sha256').update(raw, 'utf8').digest('hex')
+
+/**
+ * Generate a new access code.
+ *
+ * `bytes` is entropy in bytes, not output length; the result is base64url so
+ * the alphabet is URL-safe and needs no escaping when a user copies it.
+ */
+export function generateCode(bytes: number): GeneratedCode
+  const randomPart = randomBytes(bytes).toString('base64url')
+  const raw = `${CODE_PREFIX}${randomPart}`
+
+  {
+    raw
+    hash: hashCode(raw)
+    prefix: raw.slice(0, CODE_PREFIX_LENGTH)
+  }
+
+/**
+ * Constant-time string comparison.
+ *
+ * Used only where a caller-supplied value is compared against a stored secret.
+ * Where a lookup is by indexed equality on the digest there is no timing
+ * signal to hide, so no compare is needed at all.
+ */
+export function safeEqual(a: string, b: string): boolean
+  // Lengths are compared as locals rather than as two member accesses. In
+  // Civet 0.11.16 the negated equality operator silently compiles to a CALL when
+  // both sides are member accesses, so it parses and typechecks but throws when
+  // it runs. The positive form is safe; only the negative one is affected.
+  const lenA = a.length
+  const lenB = b.length
+
+  if lenA != lenB
+    return false
+
+  let diff = 0
+
+  for let i = 0; i < lenA; i += 1
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i)
+
+  return diff is 0
+
+/**
+ * Cheap structural rejection of a code we could never have issued.
+ *
+ * Purely a load shedder to avoid a pointless database round trip; it is not a
+ * security check, because the real check is the digest lookup.
+ */
+export function isPlausibleCodeFormat(candidate: string): boolean
+  candidate.length > CODE_PREFIX_LENGTH
+  and candidate.length <= 500
+  and candidate.startsWith(CODE_PREFIX)
+  and /^[A-Za-z0-9_-]+$/.test(candidate)

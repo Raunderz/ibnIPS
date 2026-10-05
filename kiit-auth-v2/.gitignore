@@ -1,0 +1,9 @@
+node_modules/
+build/
+.env
+.env.*
+!.env.example
+*.log
+.vercel
+coverage/
+bun.lock

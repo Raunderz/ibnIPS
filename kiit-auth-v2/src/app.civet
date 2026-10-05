@@ -1,0 +1,524 @@
+// app.civet
+// HTTP surface.
+//
+// Two things here are shaped by running on Vercel rather than a long-lived
+// server, and both are easy to get wrong:
+//
+//  - Nothing connects to the database at import time. A cold start that blocks
+//    on the network eats the function timeout and returns hard errors to users
+//    while the instance warms. Migrations run on first database use instead,
+//    behind a module-level promise so a warm instance pays for them once.
+//
+//  - Rate limits live in the database, not in a Map. Instances are recycled
+//    constantly, so an in-process counter resets and the limit is never
+//    actually enforced.
+
+import { Elysia, t } from 'elysia'
+import { randomBytes } from 'node:crypto'
+import { existsSync, readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+import { loadConfig, type Config } from './config.civet'
+import { isPlausibleCodeFormat } from './crypto.civet'
+import { ping, type Conn } from './db.civet'
+import { GoogleAuthError } from './google.civet'
+import { hit, type Limit } from './ratelimit.civet'
+import { findByCode, rotateCode, signIn } from './service.civet'
+import { migrate, sweepRateLimits } from './schema.civet'
+
+const here = dirname(fileURLToPath(import.meta.url))
+
+// Read once at module load. Reading per request would add a filesystem round
+// trip to every page view for a file that cannot change without a deploy.
+/**
+ * Locate and read the login page.
+ *
+ * Tried against two roots because this module is loaded from two different
+ * places: `src/` when Bun runs the Civet sources directly in development, and
+ * `build/src/` once compiled. Resolving a single relative path works in one and
+ * throws ENOENT in the other. Reading once at module load also avoids a
+ * filesystem round trip per request for a file that cannot change without a
+ * deploy.
+ */
+function readTemplate(): string
+  const candidates = [
+    join(here, '..', 'public', 'index.html')
+    join(here, '..', '..', 'public', 'index.html')
+  ]
+
+  for (const candidate of candidates)
+    if existsSync(candidate)
+      return readFileSync(candidate, 'utf8')
+
+  throw new Error(
+    'login page not found; looked in ' + candidates.join(' and ')
+  )
+
+PAGE_TEMPLATE := readTemplate()
+
+/**
+ * Build a Content-Security-Policy.
+ *
+ * `nonce` is null for every route except the login page. Passing one allows
+ * exactly that nonce and nothing else — no 'unsafe-inline' anywhere — so a
+ * future edit that adds a second inline script fails loudly in the browser
+ * rather than quietly widening the policy.
+ *
+ * connect-src and frame-src name Google's origin because the Sign-In button
+ * loads and frames content from it.
+ */
+cspForNonce := (nonce: string | null): string => {
+  const scriptSrc =
+    nonce is null
+      ? ["'self'", 'https://accounts.google.com']
+      : ["'self'", "'nonce-" + nonce + "'", 'https://accounts.google.com']
+
+  return [
+    "default-src 'self'"
+    'script-src ' + scriptSrc.join(' ')
+    "style-src 'self' 'unsafe-inline' https://accounts.google.com"
+    "connect-src 'self' https://accounts.google.com"
+    "frame-src 'self' https://accounts.google.com https://accounts.google.com/gsi/"
+    "img-src 'self' data: https:"
+    "font-src 'self' data: https:"
+    "object-src 'none'"
+    "base-uri 'self'"
+    "form-action 'self'"
+    "frame-ancestors 'self'"
+  ].join('; ')
+}
+
+/** Baseline policy: inline script is not permitted at all. */
+BASE_CSP := cspForNonce(null)
+
+/**
+ * Strict limit for the sign-in endpoint. This is the one worth brute forcing,
+ * so it is tight: ten attempts a quarter of an hour per caller.
+ */
+AUTH_LIMIT: Limit := { max: 10, windowSeconds: 900 }
+
+/** Ordinary authenticated calls. */
+API_LIMIT: Limit := { max: 60, windowSeconds: 60 }
+
+/**
+ * Either a usable configuration, or the reason there isn't one.
+ *
+ * Spelled as named aliases rather than inline object types in the function
+ * signature: Civet parses a `{` in return-type position as the start of a
+ * block, which swallows the function body and then fails on the closing brace
+ * several lines later with an error that points nowhere near the cause.
+ */
+type SettingsOk =
+  settings: Config
+  problem: null
+
+type SettingsProblem =
+  settings: null
+  problem: string
+
+export type Settings = SettingsOk | SettingsProblem
+
+/**
+ * Resolve configuration lazily.
+ *
+ * Returns a problem string instead of throwing, so a deployment missing its
+ * secrets answers with a readable 503 rather than a stack trace. Also the
+ * reason preview builds survive: they have no environment and no database.
+ */
+function settings(): Settings
+  const loaded = loadConfig(process.env)
+
+  if loaded.ok is false
+    return { settings: null, problem: loaded.error }
+
+  return { settings: loaded.value, problem: null }
+
+function connectionFor(cfg: Config): Conn
+  return { url: cfg.tursoUrl, token: cfg.tursoToken }
+
+/**
+ * Migrations, run at most once per warm instance.
+ *
+ * Every statement is `CREATE ... IF NOT EXISTS`, so concurrent cold starts
+ * racing here is harmless — which is the property that lets this be lazy.
+ */
+let migrating: Promise<void> | null = null
+
+async function ensureSchema(conn: Conn): Promise<void>
+  if migrating is null
+    migrating = migrate(conn).catch((error: unknown) => {
+      // Clear the cached rejection so a later request can try again rather
+      // than inheriting this failure for the life of the instance.
+      migrating = null
+      throw error
+    })
+
+  await migrating
+
+/**
+ * Identify the caller for rate limiting.
+ *
+ * Prefers the platform-provided client address. Falls back to the first entry
+ * in `x-forwarded-for` only when TRUST_PROXY says a proxy is in front —
+ * otherwise a client could spoof the header and choose its own bucket.
+ *
+ * When neither is available every caller shares the "unknown" bucket, which
+ * is a stricter failure than it looks: it throttles everyone together rather
+ * than letting anyone through.
+ */
+function callerKey(request: Request, cfg: Config): string
+  const forwarded = request.headers.get('x-forwarded-for')
+
+  if cfg.trustProxy > 0 and forwarded != null
+    const first = forwarded.split(',')[0]
+    if first != undefined
+      return first.trim()
+
+  const real = request.headers.get('x-real-ip')
+
+  if cfg.trustProxy > 0 and real != null and real != ''
+    return real.trim()
+
+  return 'unknown'
+
+/**
+ * Send a problem as JSON without leaking internals.
+ */
+function fail(status: number, error: string, headers?: Record<string, string>)
+  return new Response(JSON.stringify({ error }), {
+    status: status
+    headers: {
+      'Content-Type': 'application/json; charset=utf-8'
+      'Cache-Control': 'no-store'
+      ...(headers ?? {})
+    }
+  })
+
+export function buildApp()
+  const app = new Elysia()
+
+  /*
+   * Security headers.
+   *
+   * Uses `onRequest` rather than `use`: Elysia's `use` takes a plugin that
+   * receives and returns the app instance, not a middleware. `onRequest` runs
+   * before body parsing, which is where response headers belong.
+   *
+   * The baseline CSP forbids inline script outright. Only the login page needs
+   * to make an exception, and it does so by replacing this header with one that
+   * carries a per-request nonce — see the route handler below. That is better
+   * than generating a nonce for every request and passing it around on a scratch
+   * header, which is one forgotten delete away from leaking to clients.
+   */
+  app.onRequest(({ set }) => {
+    set.headers['content-security-policy'] = BASE_CSP
+    set.headers['x-content-type-options'] = 'nosniff'
+    set.headers['referrer-policy'] = 'strict-origin-when-cross-origin'
+    set.headers['x-frame-options'] = 'SAMEORIGIN'
+    set.headers['cross-origin-opener-policy'] = 'same-origin-allow-popups'
+    set.headers['permissions-policy'] =
+      'camera=(), microphone=(), geolocation=()'
+
+    // Elysia treats an onRequest return value as the response. Without this
+    // explicit undefined, Civet's implicit return hands back the last
+    // assignment and every request is answered with the permissions-policy
+    // string instead of being handled.
+    return undefined
+  })
+
+  /*
+   * Health check.
+   *
+   * Answers without touching the database so a platform probe can tell "the
+   * process is alive" apart from "the database is unreachable". The probe does
+   * one cheap round trip, which is acceptable and much more useful than a
+   * blind "ok".
+   */
+  app.get('/healthz', async ({ set }) => {
+    const cfg = settings()
+
+    if cfg.problem != null
+      return fail(503, 'not configured')
+
+    const reachable = await ping(connectionFor(cfg.settings))
+
+    return new Response(
+      JSON.stringify({
+        status: reachable ? 'ok' : 'degraded'
+        database: reachable ? 'connected' : 'disconnected'
+      }),
+      {
+        status: reachable ? 200 : 503
+        headers: { 'Content-Type': 'application/json; charset=utf-8' }
+      }
+    )
+  })
+
+  /*
+   * The login page.
+   *
+   * Two per-deployment values must not be baked into the file: the CSP nonce
+   * that authorises its inline script, and the OAuth client id, which has to
+   * agree with GOOGLE_CLIENT_ID on the server. The client id goes in as a
+   * complete JSON literal so a value containing quotes or angle brackets
+   * cannot break out of the script context.
+   */
+  app.get('/', ({ set }) => {
+    const cfg = settings()
+
+    if cfg.problem != null
+      return fail(503, 'not configured')
+
+    const nonce = randomBytes(16).toString('base64')
+    const clientId = JSON.stringify(cfg.settings.googleClientId)
+
+    // This is the only route with an inline script, so it is the only one that
+    // needs a nonce. Replace the baseline CSP with one that authorises exactly
+    // this nonce and nothing looser.
+    set.headers['content-security-policy'] = cspForNonce(nonce)
+
+    const page = PAGE_TEMPLATE
+      .replaceAll('__CSP_NONCE__', nonce)
+      .replaceAll('__GOOGLE_CLIENT_ID__', clientId)
+
+    return new Response(page, {
+      headers: {
+        'Content-Type': 'text/html; charset=utf-8'
+        'Cache-Control': 'no-store'
+      }
+    })
+  })
+
+  /*
+   * The raw template path redirects, so the placeholders are never served
+   * unsubstituted.
+   */
+  app.get('/index.html', () => new Response(null, {
+    status: 302
+    headers: { Location: '/' }
+  }))
+
+  /*
+   * POST /auth/google
+   *
+   * Exchange a Google ID token for this service's view of the user, and issue
+   * an access code the first time. The code is returned only here and on an
+   * explicit rotation, because only its digest is stored.
+   */
+  app.post('/auth/google', async ({ request, set }) => {
+    const cfg = settings()
+
+    if cfg.problem != null
+      return fail(503, 'not configured')
+
+    const conn = connectionFor(cfg.settings)
+    const key = callerKey(request, cfg.settings)
+
+    const verdict = await hit(conn, 'auth', key, AUTH_LIMIT, 2)
+
+    if verdict.allowed is false
+      return fail(429, 'Too many sign-in attempts. Try again later.', {
+        'Retry-After': String(verdict.retryAfterSeconds)
+      })
+
+    const body = (await request.json().catch(() => null)) as {
+      credential?: unknown
+      rotate?: unknown
+    } | null
+
+    if body is null or typeof body != 'object'
+      return fail(400, 'Could not read the request body')
+
+    const credential = body.credential
+
+    if typeof credential != 'string'
+      return fail(400, 'A Google credential is required')
+
+    if credential.length is 0 or credential.length > 10000
+      return fail(400, 'A Google credential is required')
+
+    if body.rotate != undefined and typeof body.rotate != 'boolean'
+      return fail(400, 'rotate must be a boolean')
+
+    const wantRotate = body.rotate === true
+
+    try
+      await ensureSchema(conn)
+
+      const result = await signIn(
+        conn,
+        cfg.settings,
+        credential,
+        wantRotate,
+      )
+
+      return new Response(JSON.stringify({
+        user: {
+          email: result.identity.email
+          name: result.identity.name
+          picture: result.identity.picture
+          rollNumber: result.identity.rollNumber
+        }
+        accessCode: result.code
+        accessCodePrefix: result.identity.codePrefix
+        accessCodeCreatedAt: result.identity.codeCreatedAt
+        accessCodeRotated: result.rotated
+        accessCodeIssued: result.issued
+      }), {
+        status: 200
+        headers: {
+          'Content-Type': 'application/json; charset=utf-8'
+          'Cache-Control': 'no-store'
+        }
+      })
+    catch error
+      if error instanceof GoogleAuthError
+        return fail(
+          error.domainRejected ? 403 : 401
+          error.domainRejected ? error.message : 'Invalid or expired Google credential'
+        )
+
+      // Deliberately does not include the error message: this can be a
+      // database failure and its text can name internal hosts and tables.
+      console.error('sign-in failed:', error)
+      return fail(500, 'Internal server error')
+  })
+
+  /*
+   * GET /api/me
+   *
+   * Who does this code belong to. Requires the code, which is the same
+   * primitive the backend uses to resolve a code to a roll number.
+   */
+  app.get('/api/me', async ({ request }) => {
+    const cfg = settings()
+
+    if cfg.problem != null
+      return fail(503, 'not configured')
+
+    const conn = connectionFor(cfg.settings)
+    const key = callerKey(request, cfg.settings)
+
+    const verdict = await hit(conn, 'api', key, API_LIMIT)
+
+    if verdict.allowed is false
+      return fail(429, 'Too many requests. Try again later.', {
+        'Retry-After': String(verdict.retryAfterSeconds)
+      })
+
+    const header = request.headers.get('x-api-key')
+
+    if header is null
+      return fail(401, 'Invalid or missing access code')
+
+    const candidate = header.trim()
+
+    if isPlausibleCodeFormat(candidate) is false
+      return fail(401, 'Invalid or missing access code')
+
+    try
+      await ensureSchema(conn)
+
+      const identity = await findByCode(conn, candidate)
+
+      if identity is null
+        return fail(401, 'Invalid or missing access code')
+
+      return new Response(JSON.stringify({
+        user: {
+          email: identity.email
+          name: identity.name
+          picture: identity.picture
+          rollNumber: identity.rollNumber
+        }
+        accessCodePrefix: identity.codePrefix
+        accessCodeCreatedAt: identity.codeCreatedAt
+        accessCodeRotationCount: identity.codeRotationCount
+        lastLoginAt: identity.lastLoginAt
+      }), {
+        status: 200
+        headers: {
+          'Content-Type': 'application/json; charset=utf-8'
+          'Cache-Control': 'no-store'
+        }
+      })
+    catch error
+      console.error('lookup failed:', error)
+      return fail(500, 'Internal server error')
+  })
+
+  /*
+   * POST /api/code/rotate
+   *
+   * Replace a lost code. Requires the current code, so possessing it is what
+   * authorises replacing it.
+   */
+  app.post('/api/code/rotate', async ({ request }) => {
+    const cfg = settings()
+
+    if cfg.problem != null
+      return fail(503, 'not configured')
+
+    const conn = connectionFor(cfg.settings)
+    const key = callerKey(request, cfg.settings)
+
+    const verdict = await hit(conn, 'rotate', key, AUTH_LIMIT)
+
+    if verdict.allowed is false
+      return fail(429, 'Too many requests. Try again later.', {
+        'Retry-After': String(verdict.retryAfterSeconds)
+      })
+
+    const header = request.headers.get('x-api-key')
+
+    if header is null
+      return fail(401, 'Invalid or missing access code')
+
+    const candidate = header.trim()
+
+    if isPlausibleCodeFormat(candidate) is false
+      return fail(401, 'Invalid or missing access code')
+
+    try
+      await ensureSchema(conn)
+
+      const identity = await findByCode(conn, candidate)
+
+      if identity is null
+        return fail(401, 'Invalid or missing access code')
+
+      const rotated = await rotateCode(
+        conn,
+        identity.id,
+        identity.codeHash,
+        cfg.settings.codeBytes,
+      )
+
+      // Opportunistic housekeeping: the free tier has no cron, so stale rows
+      // are swept when a caller rolls into a new window. Never fatal.
+      void sweepRateLimits(conn).catch(() => undefined)
+
+      return new Response(JSON.stringify({
+        accessCode: rotated.raw
+        accessCodePrefix: rotated.prefix
+        accessCodeRotationCount: rotated.rotatedCount
+      }), {
+        status: 200
+        headers: {
+          'Content-Type': 'application/json; charset=utf-8'
+          'Cache-Control': 'no-store'
+        }
+      })
+    catch error
+      console.error('rotation failed:', error)
+      return fail(500, 'Internal server error')
+  })
+
+  /*
+   * Unknown routes answer as JSON, so a client never has to parse an HTML
+   * error page.
+   */
+  app.all('*', () => fail(404, 'Route not found'))
+
+  return app

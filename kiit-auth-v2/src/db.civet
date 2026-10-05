@@ -1,0 +1,292 @@
+// db.civet
+// Turso/libSQL over HTTPS.
+//
+// Deliberately no client library. The HTTP pipeline protocol is a small,
+// stable JSON envelope, and hand-rolling it keeps the dependency surface at
+// zero — which also means nothing here needs a native module or a socket,
+// both awkward on serverless runtimes.
+//
+// The shape mirrors the one the Gleam backend already speaks
+// (backend/src/turso.gleam), so the two services cannot drift apart.
+//
+// Style note: this module uses explicit returns and plain loops rather than
+// chained `map`/`forEach` with inline casts. Civet's indentation parser is
+// happy with that and it keeps the generated TypeScript easy to read, which
+// matters because this file is the fallback if the language moves.
+
+export type SqlValue = string | number | null
+
+export type Row = Record<string, SqlValue>
+
+export type Conn =
+  url: string
+  token: string
+
+export class DbError extends Error
+  constructor(message: string)
+    super(message)
+    this.name = 'DbError'
+
+TIMEOUT_MS := 8000
+
+/**
+ * Encode one argument in the tagged form the pipeline expects.
+ *
+ * Integers go out as JSON strings. The decoder accepts both shapes on the way
+ * back because the API is not consistent about which it returns.
+ */
+function encodeArg(value: SqlValue)
+  if value is null
+    return { type: 'null', value: null }
+
+  if typeof value is 'number'
+    const kind = Number.isInteger(value) ? 'integer' : 'float'
+    return { type: kind, value: String(value) }
+
+  return { type: 'text', value: value as string }
+
+/**
+ * Read one cell out of the response envelope.
+ */
+function decodeCell(cell: unknown): SqlValue
+  if typeof cell != 'object' or cell is null
+    return null
+
+  if not ('type' in cell)
+    return null
+
+  const kind = (cell as unknown as { type: unknown }).type
+  const raw = (cell as unknown as { value: unknown }).value
+
+  if kind is 'integer'
+    const asInt = Number(raw)
+    if Number.isNaN(asInt)
+      return null
+    return asInt
+
+  if kind is 'float'
+    return Number(raw)
+
+  if kind is 'text'
+    if typeof raw is 'string'
+      return raw
+    return null
+
+  return null
+
+/**
+ * Turn one successful result entry into rows keyed by column name.
+ */
+function rowsFrom(result: unknown): Row[]
+  if typeof result != 'object' or result is null
+    return []
+
+  if not ('response' in result)
+    return []
+
+  const response = (result as { response: unknown }).response
+
+  if typeof response != 'object' or response is null
+    return []
+
+  if not ('result' in response)
+    return []
+
+  const inner = (response as { result: unknown }).result
+
+  if typeof inner != 'object' or inner is null
+    return []
+
+  const names: string[] = []
+  const values: unknown[][] = []
+
+  if 'cols' in inner
+    const cols = (inner as { cols: unknown }).cols
+
+    if Array.isArray(cols)
+      for (const col of cols)
+        if typeof col is 'object' and col != null and 'name' in col
+          const name = (col as { name: unknown }).name
+          if typeof name is 'string'
+            names.push(name)
+
+  if 'rows' in inner
+    const rows = (inner as { rows: unknown }).rows
+
+    if Array.isArray(rows)
+      for (const row of rows)
+        if Array.isArray(row)
+          values.push(row)
+
+  const out: Row[] = []
+
+  for (const cells of values)
+    const record: Row = {}
+
+    for (let index = 0; index < names.length; index += 1)
+      const name = names[index]
+
+      if name is not undefined and name != ''
+        record[name] = decodeCell(cells[index])
+
+    out.push(record)
+
+  return out
+
+/**
+ * Pull an error message out of the envelope, if this entry is an error.
+ */
+function errorFrom(result: unknown): string | null
+  if typeof result != 'object' or result is null
+    return null
+
+  if not ('error' in result)
+    return null
+
+  const failure = (result as { error: unknown }).error
+
+  if typeof failure != 'object' or failure is null
+    return null
+
+  if 'message' in failure
+    const message = (failure as { message: unknown }).message
+    if typeof message is 'string'
+      return message
+
+  return 'the database rejected the statement'
+
+/**
+ * How many rows a write touched.
+ */
+function affectedFrom(result: unknown): number
+  if typeof result != 'object' or result is null
+    return 0
+
+  if not ('response' in result)
+    return 0
+
+  const response = (result as { response: unknown }).response
+
+  if typeof response != 'object' or response is null
+    return 0
+
+  if 'rows_affected' in response
+    const affected = (response as { rows_affected: unknown }).rows_affected
+    if typeof affected is 'number'
+      return affected
+
+  return 0
+
+/**
+ * POST one pipeline request and hand back the first result entry.
+ *
+ * Each statement is its own HTTP request, so there is no BEGIN/COMMIT to be
+ * had here. Writes are made atomic by keeping them to a single statement.
+ */
+async function send(
+  conn: Conn,
+  sql: string,
+  args: SqlValue[],
+): Promise<unknown>
+  const encoded: unknown[] = []
+
+  for (const arg of args)
+    encoded.push(encodeArg(arg))
+
+  const body = JSON.stringify({
+    requests: [
+      { type: 'execute', stmt: { sql, args: encoded } }
+      { type: 'close' }
+    ]
+  })
+
+  let response: Response
+
+  try
+    response = await fetch(conn.url, {
+      method: 'POST'
+      headers: {
+        Authorization: 'Bearer ' + conn.token
+        'Content-Type': 'application/json'
+      }
+      body: body
+      signal: AbortSignal.timeout(TIMEOUT_MS)
+    })
+  catch (cause)
+    const reason = cause instanceof Error ? cause.message : String(cause)
+    throw new DbError('could not reach the database: ' + reason)
+
+  if response.ok is false
+    const detail = await response.text()
+    throw new DbError(
+      'database returned HTTP ' + String(response.status) + ': ' + detail
+    )
+
+  let payload: { results?: unknown[] }
+
+  try
+    payload = (await response.json()) as { results?: unknown[] }
+  catch
+    throw new DbError('the database returned a response we could not read')
+
+  const results = payload.results
+
+  if Array.isArray(results) is false or results.length is 0
+    throw new DbError('the database returned no result')
+
+  const first = results[0]
+  const failure = errorFrom(first)
+
+  if failure != null
+    throw new DbError(failure)
+
+  return first
+
+/**
+ * Run a SELECT and return zero or more rows.
+ */
+export async function query(
+  conn: Conn,
+  sql: string,
+  args: SqlValue[] = [],
+): Promise<Row[]>
+  const first = await send(conn, sql, args)
+  return rowsFrom(first)
+
+/**
+ * Run a write, reporting how many rows it changed.
+ *
+ * A conditional UPDATE uses this to detect that it lost a race, which is how
+ * the rotation compare-and-swap knows to retry.
+ */
+export async function execute(
+  conn: Conn,
+  sql: string,
+  args: SqlValue[] = [],
+): Promise<number>
+  const first = await send(conn, sql, args)
+  return affectedFrom(first)
+
+/**
+ * Run a statement for effect, ignoring how many rows it changed.
+ */
+export async function run(
+  conn: Conn,
+  sql: string,
+  args: SqlValue[] = [],
+): Promise<void>
+  await send(conn, sql, args)
+  return undefined
+
+/**
+ * Cheap liveness probe for the health check.
+ *
+ * Any answer counts as reachable. The point is only to tell "the database is
+ * down" apart from "the process is down".
+ */
+export async function ping(conn: Conn): Promise<boolean>
+  try
+    await query(conn, 'SELECT 1')
+    return true
+  catch
+    return false

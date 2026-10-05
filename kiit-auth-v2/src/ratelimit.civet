@@ -1,0 +1,89 @@
+// ratelimit.civet
+// Rate limiting backed by the database.
+//
+// An in-process counter is not good enough on this deployment. Serverless
+// instances are recycled constantly and requests spread across them, so a
+// `Map` of counters resets continuously and the limit is effectively never
+// enforced — which matters most on `/auth`, the endpoint worth brute forcing.
+//
+// The counter lives in Turso so the limit is global across every instance.
+//
+// Each check is a single statement using INSERT ... ON CONFLICT ... RETURNING.
+// SQLite has no writable CTE and no multi-statement transaction over this HTTP
+// transport, so a compound statement is not available; RETURNING is what keeps
+// the read and the increment atomic anyway.
+
+import { query, type Conn } from './db.civet'
+
+export type Limit =
+  max: number
+  windowSeconds: number
+
+export type Verdict =
+  allowed: boolean
+  remaining: number
+  retryAfterSeconds: number
+
+/**
+ * The current window's start, as a Unix timestamp.
+ *
+ * Fixed windows rather than sliding ones: they need one row per bucket per
+ * window instead of a row per request, which is the difference between a
+ * table that stays small and one that does not.
+ */
+function windowStart(nowSeconds: number, windowSeconds: number): number
+  Math.floor(nowSeconds / windowSeconds) * windowSeconds
+
+/**
+ * Count a hit against `bucket` and report whether it is still within `limit`.
+ *
+ * `key` identifies the caller — normally an IP, sometimes an IP plus a route.
+ * `cost` lets one logical action consume several units, which is how a single
+ * Google sign-in can be charged more than one cheap form submission.
+ */
+export async function hit(
+  conn: Conn,
+  bucket: string,
+  key: string,
+  limit: Limit,
+  cost: number = 1,
+): Promise<Verdict>
+  const nowSeconds = Math.floor(Date.now() / 1000)
+  const start = windowStart(nowSeconds, limit.windowSeconds)
+  const remainingWindow = start + limit.windowSeconds - nowSeconds
+
+  // One atomic statement: insert the window's first hit, or increment the
+  // existing one, and hand back the resulting total.
+  //
+  // A failure must not read as "allowed". If the counter cannot be reached the
+  // safe answer for an authentication endpoint is to refuse.
+  let hits: number
+
+  try
+    const rows = await query(
+      conn,
+      `INSERT INTO auth_rate_limits (bucket, window_start, hits)
+       VALUES (?, ?, ?)
+       ON CONFLICT (bucket, window_start)
+       DO UPDATE SET hits = hits + excluded.hits
+       RETURNING hits`,
+      [bucket + ':' + key, start, cost],
+    )
+
+    const row = rows[0]
+    const value = row?.hits
+    hits = typeof value is 'number' ? value : Number.MAX_SAFE_INTEGER
+  catch
+    return {
+      allowed: false
+      remaining: 0
+      retryAfterSeconds: limit.windowSeconds
+    }
+
+  const allowed = hits <= limit.max
+
+  {
+    allowed: allowed
+    remaining: Math.max(0, limit.max - hits)
+    retryAfterSeconds: allowed ? 0 : Math.max(1, remainingWindow)
+  }

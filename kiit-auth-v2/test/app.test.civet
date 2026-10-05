@@ -1,0 +1,168 @@
+import { afterAll, beforeAll, expect, test } from 'bun:test'
+import { buildApp } from '../src/app.civet'
+
+// Integration tests over real HTTP.
+//
+// Elysia 1.4 does not route through `app.handle`/`app.fetch` until the app has
+// been started, so these drive an actual listening server. That is also the path
+// production takes, which makes it the more honest test: it exercises Bun's
+// HTTP server and header handling rather than stubbing them out.
+//
+// Every request reaches a point that either needs no database or fails to reach
+// one. That is the interesting case — it proves the service answers sensibly
+// instead of crashing when Turso is unreachable, which is the normal state of a
+// cold start on a bad network and the state a preview deploy is in when its
+// secrets are missing.
+//
+// Callbacks use indentation bodies — see the note in config.test.civet.
+
+const app = buildApp()
+
+// Deliberately unroutable, so the database is treated as down.
+UNREACHABLE := 'http://127.0.0.1:9'
+
+let origin = ''
+
+beforeAll(() =>
+  process.env.DATABASE_URL = UNREACHABLE
+  process.env.DATABASE_TOKEN = 'token'
+  process.env.GOOGLE_CLIENT_ID = 'test-client-id.apps.googleusercontent.com'
+  process.env.ALLOWED_DOMAIN = 'kiit.ac.in'
+  process.env.TRUST_PROXY = '1'
+
+  app.listen(0)
+  const port = (app as unknown as { server: { port: number } }).server.port
+  origin = 'http://127.0.0.1:' + String(port)
+)
+
+afterAll(() =>
+  app.stop()
+)
+
+test('healthz reports degraded while the database is unreachable', async () =>
+  const response = await fetch(origin + '/healthz')
+  const body = (await response.json()) as { status: string, database: string }
+
+  expect(response.status).toBe(503)
+  expect(body.status).toBe('degraded')
+  expect(body.database).toBe('disconnected')
+)
+
+test('the login page is served with the nonce and client id injected', async () =>
+  const response = await fetch(origin + '/')
+  const page = await response.text()
+
+  expect(response.status).toBe(200)
+
+  // Neither placeholder may survive into the served page.
+  expect(page).not.toContain('__CSP_NONCE__')
+  expect(page).not.toContain('__GOOGLE_CLIENT_ID__')
+  expect(page).toContain('test-client-id.apps.googleusercontent.com')
+)
+
+test('the nonce in the page is the one the CSP authorises', async () =>
+  const response = await fetch(origin + '/')
+  const page = await response.text()
+  const csp = response.headers.get('content-security-policy') ?? ''
+
+  const fromPage = page.match(/<script nonce="([^"]+)"/)?.[1]
+  const fromCsp = csp.match(/'nonce-([^']+)'/)?.[1]
+
+  expect(fromPage).toBeTruthy()
+  expect(fromCsp).toBeTruthy()
+  expect(fromPage).toBe(fromCsp)
+)
+
+test('each request gets a fresh nonce', async () =>
+  const first = await fetch(origin + '/')
+  const second = await fetch(origin + '/')
+
+  const a = first.headers.get('content-security-policy')?.match(/'nonce-([^']+)'/)?.[1]
+  const b = second.headers.get('content-security-policy')?.match(/'nonce-([^']+)'/)?.[1]
+
+  expect(a).toBeTruthy()
+  expect(b).toBeTruthy()
+  expect(a).not.toBe(b)
+)
+
+test('script-src never allows unsafe-inline', async () =>
+  const response = await fetch(origin + '/')
+  const csp = response.headers.get('content-security-policy') ?? ''
+  const scriptSrc = csp.split(';').find((d) => d.trim().startsWith('script-src'))
+
+  expect(scriptSrc).toBeTruthy()
+  expect(scriptSrc).not.toContain('unsafe-inline')
+)
+
+test('the raw template path redirects instead of serving it', async () =>
+  const response = await fetch(origin + '/index.html', {
+    redirect: 'manual',
+  })
+
+  expect([301, 302, 307, 308]).toContain(response.status)
+  expect(response.headers.get('location')).toBe('/')
+)
+
+test('standard security headers are present', async () =>
+  const response = await fetch(origin + '/')
+
+  expect(response.headers.get('x-content-type-options')).toBe('nosniff')
+  expect(response.headers.get('x-frame-options')).toBe('SAMEORIGIN')
+  expect(response.headers.get('referrer-policy')).toBe(
+    'strict-origin-when-cross-origin'
+  )
+  expect(response.headers.get('permissions-policy')).toContain('camera=()')
+)
+
+test('unknown routes return a JSON 404', async () =>
+  const response = await fetch(origin + '/nope')
+  const body = (await response.json()) as { error: string }
+
+  expect(response.status).toBe(404)
+  expect(body.error).toBe('Route not found')
+)
+
+// The rate limit is checked before the credential, deliberately: checking the
+// credential first would let an attacker probe without ever being limited. With
+// the database down the limiter therefore answers 429, which is still correct —
+// it refuses either way. Against a reachable database this is a 401.
+test('protected routes require a code', async () =>
+  const response = await fetch(origin + '/api/me')
+  const body = (await response.json()) as { error: string }
+
+  expect([401, 429]).toContain(response.status)
+  expect(body.error).toBeTruthy()
+)
+
+test('a malformed code is never accepted', async () =>
+  const response = await fetch(origin + '/api/me', {
+    headers: { 'x-api-key': 'not-a-kiit-code!' },
+  })
+
+  expect([401, 429]).toContain(response.status)
+)
+
+// Failing closed is the property that matters: a rate limiter that cannot reach
+// its store must refuse, not wave traffic through.
+test('auth refuses when the rate limiter cannot reach the database', async () =>
+  const response = await fetch(origin + '/auth/google', {
+    method: 'POST'
+    headers: { 'Content-Type': 'application/json' }
+    body: JSON.stringify({ credential: 'anything' })
+  })
+
+  expect(response.status).toBe(429)
+  expect(response.headers.get('retry-after')).toBeTruthy()
+)
+
+test('a missing credential never produces a 500', async () =>
+  const response = await fetch(origin + '/auth/google', {
+    method: 'POST'
+    headers: { 'Content-Type': 'application/json' }
+    body: JSON.stringify({})
+  })
+
+  // Either the rate limiter refuses first (database down) or the credential
+  // check does. Both are correct; a 500 would not be.
+  expect([400, 429]).toContain(response.status)
+)

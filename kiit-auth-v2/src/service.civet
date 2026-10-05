@@ -1,0 +1,315 @@
+// service.civet
+// Identity and access-code lifecycle.
+//
+// The contract with the Gleam backend is deliberately tiny: a code plus the
+// roll number it is bound to, and nothing else. The backend resolves a code to
+// a roll number by looking up `code_hash` and reading `roll_number`, then
+// issues its own session. Because the roll number now comes from this table
+// rather than from a request body, the impersonation hole in the old shared
+// `AUTH_KEY` model is closed.
+//
+// Two properties are worth stating because they are easy to lose in a rewrite:
+//
+//  - A code is returned exactly once, at issue or at rotation. It is stored
+//    only as a SHA-256 digest, so it cannot be shown again afterwards.
+//  - Rotation is a compare-and-swap pinned to the hash the caller observed, so
+//    two simultaneous rotations cannot silently overwrite each other or leave
+//    `code_rotation_count` lying about what happened.
+
+import { generateCode, hashCode } from './crypto.civet'
+import { execute, query, DbError, type Conn, type Row } from './db.civet'
+import { GoogleAuthError, verifyGoogleIdToken } from './google.civet'
+import type { Config } from './config.civet'
+
+export type Identity =
+  id: number
+  googleSub: string
+  email: string
+  rollNumber: string
+  name: string
+  picture: string
+  codeHash: string
+  codePrefix: string
+  codeCreatedAt: number
+  codeRotationCount: number
+  lastLoginAt: number
+  revoked: boolean
+
+export type SignInResult =
+  identity: Identity
+  /** Present only when this call issued or rotated the code. */
+  code: string | null
+  issued: boolean
+  rotated: boolean
+
+function nowSeconds(): number
+  Math.floor(Date.now() / 1000)
+
+/**
+ * Read one identity row, or null.
+ */
+function toIdentity(row: Row | undefined): Identity | null
+  if row is undefined or row is null
+    return null
+
+  const id = Number(row.id)
+  const googleSub = String(row.google_sub ?? '')
+  const email = String(row.email ?? '')
+  const rollNumber = String(row.roll_number ?? '')
+  const codeHash = String(row.code_hash ?? '')
+
+  if id is 0 or googleSub is '' or codeHash is ''
+    return null
+
+  {
+    id: id
+    googleSub: googleSub
+    email: email
+    rollNumber: rollNumber
+    name: String(row.name ?? '')
+    picture: String(row.picture ?? '')
+    codeHash: codeHash
+    codePrefix: String(row.code_prefix ?? '')
+    codeCreatedAt: Number(row.code_created_at ?? 0)
+    codeRotationCount: Number(row.code_rotation_count ?? 0)
+    lastLoginAt: Number(row.last_login_at ?? 0)
+    revoked: row.revoked_at is not null and row.revoked_at is not undefined
+  }
+
+IDENTITY_COLUMNS := `id, google_sub, email, roll_number, name, picture,
+     code_hash, code_prefix, code_created_at, code_rotation_count,
+     last_login_at, revoked_at`
+
+export async function findByGoogleSub(
+  conn: Conn,
+  googleSub: string,
+): Promise<Identity | null>
+  const rows = await query(
+    conn,
+    'SELECT ' + IDENTITY_COLUMNS + ' FROM auth_identities WHERE google_sub = ?',
+    [googleSub],
+  )
+
+  toIdentity(rows[0])
+
+export async function findById(
+  conn: Conn,
+  id: number,
+): Promise<Identity | null>
+  const rows = await query(
+    conn,
+    'SELECT ' + IDENTITY_COLUMNS + ' FROM auth_identities WHERE id = ?',
+    [id],
+  )
+
+  toIdentity(rows[0])
+
+/**
+ * Resolve a plaintext code to the identity it is bound to.
+ *
+ * This is the primitive the backend mirrors. Lookup is by exact digest against
+ * a unique index, so it is an indexed equality match rather than a
+ * scan-and-compare — which is also why there is no timing signal to defend
+ * against and no constant-time comparison here.
+ */
+export async function findByCode(
+  conn: Conn,
+  rawCode: string,
+): Promise<Identity | null>
+  const rows = await query(
+    conn,
+    'SELECT ' + IDENTITY_COLUMNS +
+      ' FROM auth_identities WHERE code_hash = ? AND revoked_at IS NULL',
+    [hashCode(rawCode)],
+  )
+
+  toIdentity(rows[0])
+
+/**
+ * Is this failure a uniqueness violation?
+ *
+ * Surfaced by the database as SQLITE_CONSTRAINT on any UNIQUE column, so the
+ * message text is matched rather than a vendor-specific error code.
+ */
+function isUniqueViolation(error: unknown): boolean
+  error instanceof DbError
+  and (error.message.includes('UNIQUE')
+    or error.message.includes('constraint'))
+
+/**
+ * Rotate a code, retrying if another request rotates first.
+ *
+ * The UPDATE is pinned to the hash the caller last saw. If it changes
+ * underneath — someone else already rotated — zero rows change, the current
+ * row is reloaded, and the attempt is retried against the fresh hash. That
+ * keeps the counter honest and guarantees the plaintext handed back is the one
+ * actually stored.
+ */
+export async function rotateCode(
+  conn: Conn,
+  id: number,
+  observedHash: string,
+  codeBytes: number,
+  maxAttempts: number = 3,
+): Promise<{ raw: string, prefix: string, rotatedCount: number }>
+  let expectedHash = observedHash
+
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1)
+    const generated = generateCode(codeBytes)
+    const stamp = nowSeconds()
+
+    const changed = await execute(
+      conn,
+      `UPDATE auth_identities
+          SET code_hash = ?,
+              code_prefix = ?,
+              code_created_at = ?,
+              code_rotated_at = ?,
+              code_rotation_count = code_rotation_count + 1
+        WHERE id = ?
+          AND code_hash = ?
+          AND revoked_at IS NULL`,
+      [
+        generated.hash
+        generated.prefix
+        stamp
+        stamp
+        id
+        expectedHash
+      ],
+    )
+
+    if changed > 0
+      const fresh = await findById(conn, id)
+
+      {
+        raw: generated.raw
+        prefix: generated.prefix
+        rotatedCount: fresh?.codeRotationCount ?? attempt + 1
+      }
+
+    const fresh = await findById(conn, id)
+
+    if fresh is null
+      throw new Error('identity disappeared during code rotation')
+
+    expectedHash = fresh.codeHash
+
+  throw new Error('too many concurrent code rotations')
+
+/**
+ * Sign a user in with a Google ID token.
+ *
+ * First sign-in issues a code bound to the verified roll number. Later
+ * sign-ins refresh the profile and return no code, because the plaintext
+ * cannot be recovered from the stored digest. Passing `wantRotate` forces a
+ * fresh code, which is the only way a user can replace one they have lost.
+ */
+export async function signIn(
+  conn: Conn,
+  config: Config,
+  idToken: string,
+  wantRotate: boolean = false,
+): Promise<SignInResult>
+  const verified = await verifyGoogleIdToken(
+    idToken,
+    config.googleClientId,
+    config.allowedDomain,
+  )
+
+  let identity = await findByGoogleSub(conn, verified.googleSub)
+  let code: string | null = null
+  let issued = false
+  let rotated = false
+
+  if identity is null
+    const generated = generateCode(config.codeBytes)
+    const stamp = nowSeconds()
+
+    try
+      await execute(
+        conn,
+        `INSERT INTO auth_identities
+           (google_sub, email, roll_number, name, picture,
+            code_hash, code_prefix, code_created_at, last_login_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          verified.googleSub
+          verified.email
+          verified.rollNumber
+          verified.name
+          verified.picture
+          generated.hash
+          generated.prefix
+          stamp
+          stamp
+        ],
+      )
+
+      code = generated.raw
+      issued = true
+    catch error
+      // Two requests for the same account can both find no row and both try
+      // to insert. The loser re-reads and carries on with the winner's row
+      // instead of failing the sign-in.
+      if isUniqueViolation(error) is false
+        throw error
+
+      identity = await findByGoogleSub(conn, verified.googleSub)
+
+      if identity is null
+        // The conflict was on email or roll_number under a different subject,
+        // which should not happen inside one Workspace tenant. Fail loudly
+        // rather than silently binding the code to the wrong person.
+        throw new Error(
+          'an identity already exists for this email or roll number',
+        )
+
+  if identity is null
+    throw new Error('identity could not be loaded after sign-in')
+
+  if identity.revoked
+    throw new GoogleAuthError('this account has been revoked')
+
+  // Profile refresh. A name or picture change at Google should show up here
+  // rather than needing a separate profile endpoint.
+  await execute(
+    conn,
+    `UPDATE auth_identities
+        SET email = ?, name = ?, picture = ?, last_login_at = ?
+      WHERE id = ?`,
+    [
+      verified.email
+      verified.name
+      verified.picture
+      nowSeconds()
+      identity.id
+    ],
+  )
+
+  identity = await findByGoogleSub(conn, verified.googleSub)
+
+  if identity is null
+    throw new Error('identity disappeared during sign-in')
+
+  if wantRotate and issued is false
+    const result = await rotateCode(
+      conn,
+      identity.id,
+      identity.codeHash,
+      config.codeBytes,
+    )
+
+    code = result.raw
+    rotated = true
+    identity = await findById(conn, identity.id)
+
+    if identity is null
+      throw new Error('identity disappeared during code rotation')
+
+  {
+    identity: identity
+    code: code
+    issued: issued
+    rotated: rotated
+  }

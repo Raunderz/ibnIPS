@@ -1,0 +1,17 @@
+// server.civet
+// Local development entry point.
+//
+// Kept separate from the Vercel entry so importing the app never binds a port.
+// The same split the previous service used: a module imported for tests must not
+// start a listener or require a database.
+
+import { buildApp } from './app.civet'
+
+const app = buildApp()
+
+const port = Number(process.env.PORT ?? 3000)
+
+function announce(): void
+  console.log('kiit-auth listening on http://localhost:' + String(port))
+
+app.listen(port, announce)
