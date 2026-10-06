@@ -195,6 +195,19 @@ function fail(status: number, error: string, headers?: Record<string, string>)
     }
   })
 
+/*
+ * Request body for a Google sign-in.
+ *
+ * Declared as a schema rather than checked by hand so the shape is stated once:
+ * Elysia validates before the handler and infers the type from this, so there is
+ * no second list of field names to keep in sync. Elysia answers a bad body with
+ * 422, which is why the tests accept 422 or 429 here.
+ */
+AUTH_BODY := t.Object({
+  credential: t.String({ minLength: 1, maxLength: 10000 })
+  rotate: t.Optional(t.Boolean())
+})
+
 export function buildApp()
   const app = new Elysia()
 
@@ -305,8 +318,12 @@ export function buildApp()
    * Exchange a Google ID token for this service's view of the user, and issue
    * an access code the first time. The code is returned only here and on an
    * explicit rotation, because only its digest is stored.
+   *
+   * The body is validated by AUTH_BODY before this runs. A malformed request
+   * therefore never reaches the rate limiter — which costs nothing, because a
+   * request rejected at validation does no work worth metering.
    */
-  app.post('/auth/google', async ({ request, set }) => {
+  app.post('/auth/google', async ({ request, body }) =>
     const cfg = settings()
 
     if cfg.problem != null
@@ -322,25 +339,6 @@ export function buildApp()
         'Retry-After': String(verdict.retryAfterSeconds)
       })
 
-    const body = (await request.json().catch(() => null)) as {
-      credential?: unknown
-      rotate?: unknown
-    } | null
-
-    if body is null or typeof body != 'object'
-      return fail(400, 'Could not read the request body')
-
-    const credential = body.credential
-
-    if typeof credential != 'string'
-      return fail(400, 'A Google credential is required')
-
-    if credential.length is 0 or credential.length > 10000
-      return fail(400, 'A Google credential is required')
-
-    if body.rotate != undefined and typeof body.rotate != 'boolean'
-      return fail(400, 'rotate must be a boolean')
-
     const wantRotate = body.rotate === true
 
     try
@@ -349,7 +347,7 @@ export function buildApp()
       const result = await signIn(
         conn,
         cfg.settings,
-        credential,
+        body.credential,
         wantRotate,
       )
 
@@ -383,7 +381,8 @@ export function buildApp()
       // database failure and its text can name internal hosts and tables.
       console.error('sign-in failed:', error)
       return fail(500, 'Internal server error')
-  })
+  , { body: AUTH_BODY }
+  )
 
   /*
    * GET /api/me

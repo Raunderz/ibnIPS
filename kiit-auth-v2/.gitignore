@@ -6,4 +6,3 @@ build/
 *.log
 .vercel
 coverage/
-bun.lock

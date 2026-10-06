@@ -155,14 +155,35 @@ test('auth refuses when the rate limiter cannot reach the database', async () =>
   expect(response.headers.get('retry-after')).toBeTruthy()
 )
 
-test('a missing credential never produces a 500', async () =>
+// The body schema rejects this before the handler runs, so Elysia answers 422.
+// Against an unreachable database the rate limiter would instead answer 429.
+// What must never happen is a 500.
+test('a missing credential is rejected, never a 500', async () =>
   const response = await fetch(origin + '/auth/google', {
     method: 'POST'
     headers: { 'Content-Type': 'application/json' }
     body: JSON.stringify({})
   })
 
-  // Either the rate limiter refuses first (database down) or the credential
-  // check does. Both are correct; a 500 would not be.
-  expect([400, 429]).toContain(response.status)
+  expect([422, 429]).toContain(response.status)
+)
+
+test('a non-string credential is rejected by the body schema', async () =>
+  const response = await fetch(origin + '/auth/google', {
+    method: 'POST'
+    headers: { 'Content-Type': 'application/json' }
+    body: JSON.stringify({ credential: 12345 })
+  })
+
+  expect([422, 429]).toContain(response.status)
+)
+
+test('a non-boolean rotate flag is rejected by the body schema', async () =>
+  const response = await fetch(origin + '/auth/google', {
+    method: 'POST'
+    headers: { 'Content-Type': 'application/json' }
+    body: JSON.stringify({ credential: 'x', rotate: 'yes' })
+  })
+
+  expect([422, 429]).toContain(response.status)
 )
