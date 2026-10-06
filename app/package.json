@@ -1,0 +1,51 @@
+{
+  "name": "ibnips-mobile",
+  "version": "1.0.0",
+  "private": true,
+  "main": "expo-router/entry",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "web": "expo start --web",
+    "prebuild": "expo prebuild --clean",
+    "build:web": "expo export --platform web",
+    "proxy": "node scripts/devProxy.mjs",
+    "lint": "eslint .",
+    "test": "node --test test/*.test.js",
+    "doctor": "expo-doctor"
+  },
+  "dependencies": {
+    "@react-native-async-storage/async-storage": "2.2.0",
+    "@tanstack/react-query": "5.103.2",
+    "expo": "~57.0.25",
+    "expo-constants": "~57.0.19",
+    "expo-haptics": "~57.0.3",
+    "expo-linking": "~57.0.11",
+    "expo-location": "~57.0.20",
+    "expo-router": "~57.0.23",
+    "expo-splash-screen": "~57.0.9",
+    "expo-status-bar": "~57.0.1",
+    "expo-system-ui": "~57.0.4",
+    "lucide-react-native": "0.545.0",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "react-native": "0.86.3",
+    "react-native-gesture-handler": "~2.32.0",
+    "react-native-reanimated": "4.5.1",
+    "react-native-safe-area-context": "~5.7.0",
+    "react-native-screens": "~4.26.0",
+    "react-native-svg": "15.15.4",
+    "react-native-web": "0.21.3",
+    "react-native-wifi-reborn": "4.13.6",
+    "react-native-worklets": "0.10.1"
+  },
+  "devDependencies": {
+    "eslint": "^9.39.0",
+    "eslint-config-expo": "~57.0.2"
+  },
+  "overrides": {
+    "react": "19.2.3",
+    "react-dom": "19.2.3"
+  }
+}
