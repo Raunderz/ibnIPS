@@ -14,6 +14,7 @@ always `application/json`. Auth uses a bearer token in the `Authorization` heade
 - [Ping (tag a room)](#ping)
 - [Position (locate the caller)](#position)
 - [Get Nodes](#get-nodes)
+- [Feedback](#feedback)
 - [Get Map](#get-map)
 - [Shared Types](#shared-types)
 - [Validation Rules](#validation-rules)
@@ -378,6 +379,106 @@ Full graph (nodes + edges) for rendering the map on the frontend.
 
 ---
 
+## Feedback
+
+### `POST /api/feedback` (no auth)
+
+Records what one person thought of the app. **No token is required** — feedback
+is only worth anything if it is cheap to leave, and the people worth asking are
+not the ones holding a token.
+
+**Request body**
+
+```json
+{
+  "username": "Ananya Sharma",
+  "comment": "It told me I was in Room 204 when I was in 201, but overall fast.",
+  "rating": 4
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `username` | string | yes | Name as typed into the form, 1–80 characters. Free text — not a roll number |
+| `comment` | string | yes | The written response, 1–2000 characters |
+| `rating` | int or null | no | 1–5 stars. May be omitted or `null` |
+
+> **The rating is optional and the comment is not.** Requiring stars would lose
+> exactly the people with something to say but no patience for a survey.
+
+**201 Created**
+
+```json
+{ "status": "recorded" }
+```
+
+> **A token is used for attribution only.** If the request carries a valid
+> `Authorization: Bearer <token>`, the sender's roll number is stored in
+> `user_id`; otherwise `user_id` is `null`. A *bad* token is not an error — the
+> response is simply recorded anonymously, because refusing it would lose a
+> comment we cannot ask for again.
+
+**Errors**
+
+| Status | Body |
+|--------|------|
+| `400` | `{"error":"invalid_json","details":"Could not parse feedback request"}` |
+| `400` | `{"error":"validation_failed","details":"Username must not be blank"}` |
+| `400` | `{"error":"validation_failed","details":"Comment must not be blank"}` |
+| `400` | `{"error":"validation_failed","details":"Rating must be between 1 and 5"}` |
+| `413` | Request body larger than 64 KiB |
+| `429` | `{"error":"rate_limited","details":"Too many requests. Try again later."}` |
+| `500` | `{"error":"database_error","details":"<msg>"}` |
+
+---
+
+### `GET /api/feedback` (no auth)
+
+Every stored response, newest first. `total` counts the whole table, not the
+page, so it stays a true answer to "how many people have responded" whatever
+`limit` is.
+
+**Query parameters**
+
+| Param | Default | Max | Description |
+|-------|---------|-----|-------------|
+| `limit` | 100 | 500 | How many responses to return. A junk value falls back to the default |
+
+**200 OK**
+
+```json
+{
+  "total": 128,
+  "feedback": [
+    {
+      "feedback_id": 128,
+      "username": "Ananya Sharma",
+      "comment": "It told me I was in Room 204 when I was in 201, but overall fast.",
+      "rating": 4,
+      "user_id": "23b1234",
+      "created_at": 1791905549
+    }
+  ]
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `feedback_id` | int | Insertion order; newest is the highest |
+| `username` | string | As typed by the sender, trimmed |
+| `comment` | string | As typed by the sender, trimmed |
+| `rating` | int or `null` | 1–5, or `null` when only a comment was given |
+| `user_id` | string or `null` | Roll number if the sender was authenticated, else `null` |
+| `created_at` | int | Unix epoch seconds |
+
+**Errors**
+
+| Status | Body |
+|--------|------|
+| `500` | `{"error":"database_error","details":"<msg>"}` |
+
+---
+
 ## Shared Types
 
 ### Node
@@ -403,6 +504,21 @@ backend), so the frontend must assign positions itself.
   "to_node": "string (node_id)",
   "steps": "int",
   "direction": "string (N, NE, E, SE, S, SW, W, NW)"
+}
+```
+
+### Feedback
+
+What `POST /api/feedback` accepts, and what `GET /api/feedback` returns:
+
+```json
+{
+  "feedback_id": "int (GET only)",
+  "username": "string",
+  "comment": "string",
+  "rating": "int 1-5 or null",
+  "user_id": "string or null (GET only — roll number if authenticated)",
+  "created_at": "int (GET only, unix epoch seconds)"
 }
 ```
 

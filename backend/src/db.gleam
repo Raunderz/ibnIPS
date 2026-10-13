@@ -243,6 +243,31 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 "
 
+  // --- NEW: feedback: one row per person who sent us feedback ---
+  // username is free text (they type it in a form), not the roll number, so
+  // anonymous responses still name someone.
+  // rating is nullable: a written comment counts on its own, so requiring a
+  // star rating would lose the people with something to say but no patience for
+  // a survey.
+  // user_id is nullable and filled in when the sender happens to have a valid
+  // token, which lets us tell authenticated responses from anonymous ones
+  // without making either mandatory.
+  let feedback_sql =
+    "
+CREATE TABLE IF NOT EXISTS feedback (
+  feedback_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  username TEXT NOT NULL,
+  comment TEXT NOT NULL,
+  rating INTEGER,
+  user_id TEXT,
+  created_at INTEGER DEFAULT (unixepoch())
+);
+"
+  // Newest first is the only order worth reading feedback in.
+  let feedback_index_sqls = [
+    "CREATE INDEX IF NOT EXISTS idx_feedback_created_at ON feedback(created_at)",
+  ]
+
   // Execute each migration in order. `result.try` returns early on failure.
   use _ <- result.try(db_query.exec_plain(nodes_sql, conn))
   use _ <- result.try(db_query.exec_plain(room_aps_sql, conn))
@@ -252,6 +277,12 @@ CREATE TABLE IF NOT EXISTS sessions (
   )
   use _ <- result.try(db_query.exec_plain(users_sql, conn))
   use _ <- result.try(db_query.exec_plain(sessions_sql, conn))
+  use _ <- result.try(db_query.exec_plain(feedback_sql, conn))
+  use _ <- result.try(
+    list.try_each(feedback_index_sqls, fn(sql) {
+      db_query.exec_plain(sql, conn)
+    }),
+  )
 
   // Fold any readings recorded by an older version of the app into room_aps.
   // Deliberately not part of the chain above: a database left over from an older

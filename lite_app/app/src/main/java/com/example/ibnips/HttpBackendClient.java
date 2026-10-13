@@ -226,6 +226,36 @@ public class HttpBackendClient {
     }
 
     // ------------------------------------------------------------------
+    // getFeedback — GET /api/feedback → returns FeedbackResponse
+    // ------------------------------------------------------------------
+
+    /**
+     * Fetches the feedback people have left about the app.
+     *
+     * <p>Read-only from the app's side: this screen shows responses and never
+     * posts one.
+     *
+     * @param token bearer token, or null — the endpoint is public, so a token
+     *              is not needed and the app can show reviews before the user
+     *              has entered the access key
+     * @return FeedbackResponse, or null on failure (see {@link #getLastError()})
+     */
+    public FeedbackResponse getFeedback(String token) {
+        try {
+            // The server caps a page at 500 and defaults to 100. Ask for the
+            // cap so an older, longer list is not silently cut in half.
+            JSONObject response = get("/api/feedback?limit=500", token);
+            if (response == null) return null;
+            lastError = "";
+            return FeedbackResponse.fromJSON(response);
+        } catch (Exception e) {
+            Log.e(TAG, "getFeedback failed", e);
+            lastError = "could not read the feedback: " + e;
+            return null;
+        }
+    }
+
+    // ------------------------------------------------------------------
     // Low-level helpers
     // ------------------------------------------------------------------
 

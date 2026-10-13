@@ -1,6 +1,7 @@
 package com.example.ibnips;
 
 import android.app.Activity;
+import android.app.Dialog;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
@@ -8,11 +9,15 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
+import android.view.LayoutInflater;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.animation.OvershootInterpolator;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -55,6 +60,10 @@ public class MainActivity extends Activity {
     private Button    pingButton;
     private Button    fetchMapButton;
     private Button    locateMeButton;
+    private Button    reviewsButton;
+
+    /** Open reviews dialog, or null when it is not showing. */
+    private Dialog     feedbackDialog;
 
     // ------------------------------------------------------------------
     // App state
@@ -90,6 +99,7 @@ public class MainActivity extends Activity {
         pingButton     = findViewById(R.id.btnPing);
         fetchMapButton = findViewById(R.id.btnFetchMap);
         locateMeButton = findViewById(R.id.btnLocateMe);
+        reviewsButton  = findViewById(R.id.btnReviews);
 
         // Floor spinner: floors 1–5
         String[] floors = {"Floor 1", "Floor 2", "Floor 3", "Floor 4", "Floor 5"};
@@ -106,6 +116,7 @@ public class MainActivity extends Activity {
         pingButton.setOnClickListener(v -> { animatePress(v); onPingClicked(); });
         fetchMapButton.setOnClickListener(v -> { animatePress(v); onFetchMapClicked(); });
         locateMeButton.setOnClickListener(v -> { animatePress(v); onLocateMeClicked(); });
+        reviewsButton.setOnClickListener(v -> { animatePress(v); showFeedback(); });
 
         // Pressing the key field re-authenticates, so a corrected key takes
         // effect without restarting the app.
@@ -473,6 +484,170 @@ public class MainActivity extends Activity {
                 Toast.makeText(MainActivity.this, statusMsg, Toast.LENGTH_LONG).show();
             });
         });
+    }
+
+    // ------------------------------------------------------------------
+    // Feedback (read-only)
+    // ------------------------------------------------------------------
+
+    /**
+     * Show what other people said about the app.
+     *
+     * <p>Read-only on purpose: there is no input, so nothing here can write to
+     * the feedback table. Responses are fetched from GET /api/feedback, which
+     * is public — so this works before the user has entered the access key,
+     * which matters because the whole point is to show a visitor something
+     * before asking them to log in.
+     *
+     * <p>The dialog opens immediately with a "Loading…" line and fills in when
+     * the fetch lands, so a slow or dead server leaves a readable message
+     * rather than a button that appears to do nothing.
+     */
+    private void showFeedback() {
+        if (feedbackDialog != null && feedbackDialog.isShowing()) {
+            feedbackDialog.dismiss();
+        }
+
+        // No title bar: a Dialog draws one only if asked, and asking on the
+        // Activity instead (requestWindowFeature) crashes — that call must
+        // happen on a window, before any content is set.
+        Dialog dialog = new Dialog(this);
+        dialog.setContentView(R.layout.feedback);
+        dialog.setCanceledOnTouchOutside(true);
+
+        final TextView summary = dialog.findViewById(R.id.feedbackSummary);
+        final TextView empty   = dialog.findViewById(R.id.feedbackEmpty);
+        final ScrollView scroll = dialog.findViewById(R.id.feedbackScroll);
+        final LinearLayout list = dialog.findViewById(R.id.feedbackList);
+
+        summary.setText("Loading feedback…");
+        empty.setVisibility(View.GONE);
+        scroll.setVisibility(View.VISIBLE);
+
+        dialog.findViewById(R.id.btnCloseFeedback)
+              .setOnClickListener(v -> dialog.dismiss());
+        dialog.setOnDismissListener(d -> feedbackDialog = null);
+
+        feedbackDialog = dialog;
+        dialog.show();
+
+        runInBackground(() -> {
+            // No token: the endpoint is public, and sending a stale one would
+            // turn a successful fetch into a 401 for no benefit.
+            FeedbackResponse data = backendClient.getFeedback(null);
+            // Read on this thread: another request in flight could overwrite the
+            // shared last-error state before the UI thread gets to look at it.
+            final String error = backendClient.getLastError();
+            mainHandler.post(() -> {
+                // The user may have closed the dialog while this was in flight.
+                if (feedbackDialog != dialog) return;
+                if (data == null) {
+                    scroll.setVisibility(View.GONE);
+                    empty.setVisibility(View.VISIBLE);
+                    // Clear the placeholder — leaving "Loading feedback…" above
+                    // an error reads as though the fetch is still running.
+                    summary.setText("");
+                    empty.setText("Could not load feedback — "
+                            + friendlyReason(error));
+                    return;
+                }
+                renderFeedback(data, summary, empty, scroll, list);
+            });
+        });
+    }
+
+    /**
+     * Turn a raw client error into something worth showing a user.
+     *
+     * <p>{@link HttpBackendClient} keeps its last error for the log as well as
+     * the screen, so a connection failure reads
+     * {@code "no reply from https://… (java.io.IOException: unexpected end of
+     * stream on com.android.okhttp.Address@5b7775b5)"}. That is right in
+     * logcat and wrong on screen: an object hash, a package name and the
+     * server's URL tell the user nothing they can act on. Anything the user
+     * could do something about is the same in every one of these failures —
+     * check the connection and try again — so say that, and leave the detail
+     * where it is already useful.
+     */
+    private static String friendlyReason(String error) {
+        if (error == null || error.trim().isEmpty()) {
+            return "check your connection and try again.";
+        }
+        // An HTTP status is worth passing on, since it says the server answered
+        // and something was wrong with the request rather than the network.
+        if (error.startsWith("HTTP 404")) {
+            // The app can be newer than the backend it talks to. Say that,
+            // rather than showing "Not found" as though the person had asked
+            // for something that does not exist.
+            return "the server this app is talking to does not have "
+                    + "feedback yet.";
+        }
+        if (error.startsWith("HTTP ")) {
+            return error.trim();
+        }
+        return "check your connection and try again.";
+    }
+
+    /**
+     * Fill the dialog with the responses.
+     *
+     * <p>The count in the summary comes from the server's `total`, not from the
+     * number of rows received — the two differ once there are more responses
+     * than one page holds, and only the first is an honest "N people said".
+     */
+    private void renderFeedback(FeedbackResponse data,
+                                TextView summary,
+                                TextView empty,
+                                ScrollView scroll,
+                                LinearLayout list) {
+        list.removeAllViews();
+
+        if (data.items.isEmpty()) {
+            summary.setText(data.total + (data.total == 1 ? " response" : " responses"));
+            scroll.setVisibility(View.GONE);
+            empty.setVisibility(View.VISIBLE);
+            empty.setText("No feedback yet. Be the first to leave some.");
+            return;
+        }
+
+        StringBuilder head = new StringBuilder();
+        head.append(data.total)
+            .append(data.total == 1 ? " response" : " responses");
+        float average = data.averageRating();
+        if (average > 0f) {
+            head.append("  ·  ").append(String.format(Locale.ROOT, "%.1f", average)).append(" ★");
+        }
+        summary.setText(head.toString());
+
+        LayoutInflater inflater = LayoutInflater.from(this);
+        for (FeedbackItem item : data.items) {
+            View row = inflater.inflate(R.layout.item_review, list, false);
+
+            TextView username = row.findViewById(R.id.reviewUsername);
+            TextView stars    = row.findViewById(R.id.reviewStars);
+            TextView comment  = row.findViewById(R.id.reviewComment);
+
+            // Fall back to something anonymous rather than showing a blank line:
+            // a response with no visible name reads as a bug in the app.
+            String name = isEmptyStr(item.username) ? "Anonymous" : item.username;
+            username.setText(name);
+
+            // Hide the star field entirely when there is no rating, rather than
+            // showing five empty stars that read as a one-star review.
+            String starsText = item.stars();
+            stars.setText(starsText);
+            stars.setVisibility(starsText.isEmpty() ? View.GONE : View.VISIBLE);
+
+            comment.setText(isEmptyStr(item.comment) ? "—" : item.comment);
+
+            list.addView(row, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT));
+        }
+
+        empty.setVisibility(View.GONE);
+        scroll.setVisibility(View.VISIBLE);
+        scroll.scrollTo(0, 0);
     }
 
     // ------------------------------------------------------------------

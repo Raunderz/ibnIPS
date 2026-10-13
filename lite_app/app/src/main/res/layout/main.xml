@@ -36,7 +36,7 @@
             <Button
                 android:id="@+id/btnScan"
                 android:layout_width="match_parent"
-                android:layout_height="38dp"
+                android:layout_height="34dp"
                 android:layout_marginBottom="3dp"
                 android:background="@drawable/btn_scan"
                 android:drawableStart="@drawable/ic_scan"
@@ -51,7 +51,7 @@
             <Button
                 android:id="@+id/btnPing"
                 android:layout_width="match_parent"
-                android:layout_height="38dp"
+                android:layout_height="34dp"
                 android:layout_marginBottom="3dp"
                 android:background="@drawable/btn_ping"
                 android:drawableStart="@drawable/ic_ping"
@@ -66,7 +66,7 @@
             <Button
                 android:id="@+id/btnFetchMap"
                 android:layout_width="match_parent"
-                android:layout_height="38dp"
+                android:layout_height="34dp"
                 android:layout_marginBottom="3dp"
                 android:background="@drawable/btn_fetch_map"
                 android:drawableStart="@drawable/ic_map"
@@ -79,9 +79,24 @@
                 android:textAllCaps="false" />
 
             <Button
+                android:id="@+id/btnReviews"
+                android:layout_width="match_parent"
+                android:layout_height="34dp"
+                android:layout_marginBottom="3dp"
+                android:background="@drawable/btn_reviews"
+                android:drawableStart="@drawable/ic_reviews"
+                android:drawablePadding="6dp"
+                android:paddingStart="12dp"
+                android:paddingEnd="12dp"
+                android:text="Reviews"
+                android:textColor="#FFFFFF"
+                android:textSize="13sp"
+                android:textAllCaps="false" />
+
+            <Button
                 android:id="@+id/btnLocateMe"
                 android:layout_width="match_parent"
-                android:layout_height="38dp"
+                android:layout_height="34dp"
                 android:background="@drawable/btn_locate_me"
                 android:drawableStart="@drawable/ic_locate"
                 android:drawablePadding="6dp"

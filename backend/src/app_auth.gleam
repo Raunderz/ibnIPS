@@ -376,6 +376,23 @@ fn validate_token(
   }
 }
 
+/// The caller's user id when they sent a usable token, `Error` otherwise.
+///
+/// Unlike `require_auth` this never rejects a request — it is for endpoints
+/// that are public but can attribute a row to a signed-in user when one is
+/// available. `POST /api/feedback` uses it: a bad token means the response is
+/// recorded anonymously, not refused.
+pub fn identify(
+  request: wisp.Request,
+  conn: db.Connection,
+  jwt_secret: String,
+) -> Result(String, Nil) {
+  case validate_token(request, conn, jwt_secret) {
+    Ok(#(user_id, _session_id)) -> Ok(user_id)
+    Error(_) -> Error(Nil)
+  }
+}
+
 /// Middleware: require valid auth token before calling handler.
 ///
 /// Usage in route handlers:

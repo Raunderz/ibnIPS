@@ -5,6 +5,7 @@ All notable changes to ibnIPS will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- `POST /api/feedback` and `GET /api/feedback` — anonymous feedback collection (username, comment, optional 1-5 rating), stored in a new `feedback` table. A valid token attributes the response to a roll number; it is not required
 - `POST /api/position` — server-side Wi-Fi fingerprint localisation, so a room tagged once locates from every device
 - React Native (Expo) frontend with real-time indoor positioning
 - Kotlin (Jetpack Compose) Android app

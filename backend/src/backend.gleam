@@ -4,6 +4,7 @@
 import app_auth
 import db
 import env
+import feedback
 import gleam/erlang/process
 import gleam/http
 import gleam/int
@@ -79,6 +80,8 @@ pub fn main() -> Nil {
 ///   POST /api/position     -> locate caller from a Wi-Fi scan (auth required)
 ///   GET  /api/nodes        -> list nodes (public)
 ///   GET  /api/map          -> full graph (public)
+///   POST /api/feedback     -> record feedback (public)
+///   GET  /api/feedback     -> read feedback back (public)
 fn handle_request(
   request: wisp.Request,
   conn: db.Connection,
@@ -156,6 +159,17 @@ fn route(
           })
         }
         _ -> wisp.method_not_allowed(allowed: [http.Post])
+      }
+    }
+
+    // Feedback — public, no auth. Collecting responses from people who are not
+    // on the mapping team only works if they do not have to log in first, so a
+    // token is used for attribution when sent and ignored when not.
+    ["api", "feedback"] -> {
+      case request.method {
+        http.Post -> feedback.handle_post(request, conn, jwt_secret)
+        http.Get -> feedback.handle_get(request)
+        _ -> wisp.method_not_allowed(allowed: [http.Post, http.Get])
       }
     }
 

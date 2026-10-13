@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The reviews screen, shown in a Dialog.
+
+  A ScrollView of inflated cards rather than a RecyclerView: the app uses no
+  support libraries at all, RecyclerView would mean adding AndroidX, and a
+  dialog this size holds a few dozen short rows comfortably.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:background="@drawable/panel_bottom"
+    android:padding="16dp">
+
+    <TextView
+        android:id="@+id/feedbackTitle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="What students say"
+        android:textColor="#212121"
+        android:textSize="17sp"
+        android:textStyle="bold" />
+
+    <!-- Summary line: how many responses, and the average star rating. -->
+    <TextView
+        android:id="@+id/feedbackSummary"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:layout_marginBottom="12dp"
+        android:textColor="#616161"
+        android:textSize="12sp" />
+
+    <!-- The cards. Populated in code; empty until the fetch lands. -->
+    <ScrollView
+        android:id="@+id/feedbackScroll"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:fillViewport="true"
+        android:scrollbars="vertical">
+
+        <LinearLayout
+            android:id="@+id/feedbackList"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical" />
+
+    </ScrollView>
+
+    <!-- Shown instead of the list when there is nothing to show: a failed
+         fetch, or genuinely no responses yet. -->
+    <TextView
+        android:id="@+id/feedbackEmpty"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingTop="24dp"
+        android:paddingBottom="24dp"
+        android:gravity="center"
+        android:textColor="#757575"
+        android:textSize="13sp"
+        android:visibility="gone" />
+
+    <Button
+        android:id="@+id/btnCloseFeedback"
+        android:layout_width="match_parent"
+        android:layout_height="38dp"
+        android:layout_marginTop="4dp"
+        android:background="@drawable/btn_fetch_map"
+        android:text="Close"
+        android:textColor="#FFFFFF"
+        android:textSize="13sp"
+        android:textAllCaps="false" />
+
+</LinearLayout>

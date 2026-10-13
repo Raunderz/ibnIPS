@@ -5,6 +5,7 @@
 
 import gleam/dynamic/decode
 import gleam/json
+import gleam/option.{type Option, None}
 
 // --- Types ---
 
@@ -102,6 +103,39 @@ pub type PositionResult {
   )
 }
 
+/// What a person sends to POST /api/feedback.
+///
+/// `rating` is optional so a written comment alone is a complete response.
+pub type FeedbackRequest {
+  FeedbackRequest(
+    username: String,
+    // free text, as typed into the form
+    comment: String,
+    rating: Option(Int),
+    // 1–5 stars, or None
+  )
+}
+
+/// A stored response, as served back by GET /api/feedback.
+pub type Feedback {
+  Feedback(
+    feedback_id: Int,
+    username: String,
+    comment: String,
+    rating: Option(Int),
+    // 1–5 stars, or None when the sender only wrote a comment
+    user_id: Option(String),
+    // roll number, when the sender had a valid token; None when anonymous
+    created_at: Int,
+    // unix epoch seconds
+  )
+}
+
+/// Every stored response plus how many there are in total.
+pub type FeedbackList {
+  FeedbackList(total: Int, feedback: List(Feedback))
+}
+
 /// Standard error response shape: `{"error": code, "details": message}`.
 pub type ErrorResponse {
   ErrorResponse(error: String, details: String)
@@ -140,6 +174,46 @@ pub fn decode_position_request() -> decode.Decoder(PositionRequest) {
     decode.list(decode_fingerprint()),
   )
   decode.success(PositionRequest(fingerprints))
+}
+
+/// Decode one stored feedback row.
+pub fn feedback_row_decoder() -> decode.Decoder(Feedback) {
+  use feedback_id <- decode.field("feedback_id", decode.int)
+  use username <- decode.field("username", decode.string)
+  use comment <- decode.field("comment", decode.string)
+  use rating <- nullable_field("rating", decode.int)
+  use user_id <- nullable_field("user_id", decode.string)
+  use created_at <- decode.field("created_at", decode.int)
+  decode.success(Feedback(
+    feedback_id,
+    username,
+    comment,
+    rating,
+    user_id,
+    created_at,
+  ))
+}
+
+/// Decode a JSON field that may be missing or `null` into an `Option`.
+///
+/// `decode.field` fails when the key is absent and `decode.optional` handles
+/// `null`, but neither accepts both on its own — so the two are combined here.
+/// Without this, a form that sends `null` for a skipped star rating would have
+/// its whole comment rejected with it.
+fn nullable_field(
+  key: String,
+  inner: decode.Decoder(a),
+  next: fn(Option(a)) -> decode.Decoder(b),
+) -> decode.Decoder(b) {
+  decode.optional_field(key, None, decode.optional(inner), next)
+}
+
+/// Decoder for a `FeedbackRequest` from JSON.
+pub fn decode_feedback_request() -> decode.Decoder(FeedbackRequest) {
+  use username <- decode.field("username", decode.string)
+  use comment <- decode.field("comment", decode.string)
+  use rating <- nullable_field("rating", decode.int)
+  decode.success(FeedbackRequest(username, comment, rating))
 }
 
 // --- JSON Encoders ---
@@ -202,5 +276,28 @@ pub fn encode_position_result(result: PositionResult) -> json.Json {
     #("confidence", json.int(result.confidence)),
     #("confidence_level", json.string(result.confidence_level)),
     #("samples", json.int(result.samples)),
+  ])
+}
+
+/// Encode a stored `Feedback` row as JSON.
+///
+/// `rating` and `user_id` are emitted as `null` rather than omitted, so a
+/// client can rely on the keys being there on every row.
+pub fn encode_feedback(entry: Feedback) -> json.Json {
+  json.object([
+    #("feedback_id", json.int(entry.feedback_id)),
+    #("username", json.string(entry.username)),
+    #("comment", json.string(entry.comment)),
+    #("rating", json.nullable(entry.rating, json.int)),
+    #("user_id", json.nullable(entry.user_id, json.string)),
+    #("created_at", json.int(entry.created_at)),
+  ])
+}
+
+/// Encode the whole feedback list, with its total.
+pub fn encode_feedback_list(list: FeedbackList) -> json.Json {
+  json.object([
+    #("total", json.int(list.total)),
+    #("feedback", json.array(list.feedback, encode_feedback)),
   ])
 }
