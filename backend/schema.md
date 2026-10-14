@@ -26,35 +26,37 @@ always `application/json`. Auth uses a bearer token in the `Authorization` heade
 
 ### `POST /api/auth`
 
-Exchange the shared access key and an email address for an auth token. The
-email **must** end with `@kiit.ac.in`.
+Exchange an access code for an auth token. The code is issued by the auth
+service (`kiit-auth-v2`) after it verifies a Google identity, and is bound to
+that person's roll number.
 
 **Request body**
 
 ```json
 {
-  "email": "user@kiit.ac.in",
-  "access_key": "<the AUTH_KEY value>"
+  "code": "kiit_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
 }
 ```
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `email` | string | yes | Must end with `@kiit.ac.in`; the roll number becomes `user_id` |
-| `access_key` | string | yes | The shared secret from `AUTH_KEY` |
+| `code` | string | yes | An access code issued by the auth service |
 
-> **The access key is the entire authentication story here.** This endpoint
-> issues a token to whoever supplies the key, and anyone who has it can log in
-> as any `@kiit.ac.in` address — there is no per-user password or email
-> verification. That is fine for a single shared campus deployment where the key
-> is only known to the mapping team, and is *not* fine if this grows into a
-> system with untrusted users, which would need real per-user credentials.
+> **The code is the entire authentication story here.** Nothing else is taken
+> from the request — there is no email field, and a caller cannot name a user
+> because there is nowhere in the body to put one. The roll number is whatever
+> the code is already bound to.
+>
+> The previous scheme took an email address and a shared `AUTH_KEY` and trusted
+> both, so anyone holding the key could log in as any `@kiit.ac.in` address.
+> That hole is closed: the code can only have been issued to the account it
+> identifies.
 
-The key is compared in constant time, so it cannot be discovered one character
-at a time by timing rejections.
-
-> **A wrong key gives the same answer whatever email was sent with it**, so the
-> endpoint does not confirm which addresses are real.
+Redeeming a code is a lookup in `auth_identities`, the table the auth service
+owns. Both services share one database, so there is no network call and the auth
+service being down cannot stop anyone logging in. The code is SHA-256 hashed and
+matched against a UNIQUE index, which is an indexed equality match rather than a
+scan-and-compare — so there is nothing to defend with a constant-time compare.
 
 **200 OK**
 
@@ -66,20 +68,31 @@ at a time by timing rejections.
 ```
 
 > Tokens are **HS256 JWTs** signed with the `JWT_SECRET` env var. They embed a
-> server-side session id (`sid`) checked against the `sessions` table on every
-> request, and expire 24 hours after issuance. Request a new one if yours has
-> expired.
+> server-side session id (`sid`) checked on every request against the
+> `sessions` table *joined to `auth_identities`*, and expire 30 days after
+> issuance. That lifetime is a backstop, not the control — see below.
 
 **Errors**
 
 | Status | Body |
 |--------|------|
-| `401` | `{"error":"unauthorized","details":"Invalid or missing access key"}` |
-| `403` | `{"error":"unauthorized","details":"Email must end with @kiit.ac.in"}` |
-| `400` | `{"error":"invalid_email","details":"Invalid email format: must be roll_no@kiit.ac.in"}` |
+| `401` | `{"error":"unauthorized","details":"Invalid or expired access code"}` |
+| `401` | `{"error":"unauthorized","details":"Missing access code"}` |
 | `400` | `{"error":"invalid_json","details":"Could not parse request body"}` |
 
-> A missing `access_key` field is an `invalid_json` error, not a key error.
+> A missing `code` field is an `invalid_json` error, not a code error.
+>
+> An unknown code and a revoked one give the same answer on purpose: the
+> difference between "that code does not exist" and "that code was withdrawn" is
+> not something an unsigned caller is entitled to.
+
+> **Sessions stop working four ways, all checked on every protected request:**
+> rotating the code, revoking the identity, logging out, and the 30-day
+> expiry. The first two are the ones worth relying on — a user who rotates a
+> lost phone has genuinely locked out whoever had it, on their next request
+> rather than at some later expiry. That works because the session row pins the
+> `code_hash` it was issued against, and rotation changes the hash in
+> `auth_identities`.
 
 ---
 
@@ -624,7 +637,7 @@ All errors share the same shape:
 |------|---------|
 | `invalid_json` | Body was not valid JSON / missing required fields |
 | `invalid_email` | Email did not match the `roll_no@kiit.ac.in` format |
-| `unauthorized` | Invalid/missing access key, bad email domain, or invalid/missing bearer token |
+| `unauthorized` | Invalid/missing access code, or invalid/missing bearer token |
 | `validation_failed` | A field violated the [validation rules](#validation-rules) |
 | `unknown_previous_node` | `previous_node_id` does not name an existing room |
 | `no_match` | No tagged room shares a Wi-Fi network with the scan (`404`) |
@@ -645,10 +658,12 @@ to charge requests against — not an identity, and not a security boundary.
 
 ## Frontend Notes
 
-- **Auth flow:** call `POST /api/auth` once with an `@kiit.ac.in` email and the
-  `AUTH_KEY` value, store the token, and send it on every `POST /api/ping` as
-  `Authorization: Bearer <token>`. Treat the key like a password: keep it out of
-  source control and out of shared screenshots.
+- **Auth flow:** have the user get an access code from the auth service's site,
+  then call `POST /api/auth` once with `{"code": "..."}`, store the token, and
+  send it on every protected request as `Authorization: Bearer <token>`.
+  Treat the code like a password: it is a bearer credential, so keep it out of
+  source control and out of shared screenshots. If the user rotates it, their
+  token stops working on the next request.
 - **Building the map:** fetch `GET /api/map`; render `nodes` (with x/y positions
   you assign) and draw `edges` between `from_node` → `to_node`.
 - **Room tagging walk:** the app walks room-by-room; each room sends

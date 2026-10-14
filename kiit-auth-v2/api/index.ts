@@ -31,6 +31,28 @@ function originFor(req: VercelRequest): string {
   return hostname.includes('://') ? hostname : `${proto}://${hostname}`
 }
 
+/**
+ * Coerce whatever Vercel put in `req.body` into something `Request` accepts.
+ *
+ * Vercel parses a JSON request body into `req.body` as a plain object rather
+ * than leaving it as text. Handing that straight to `Request` coerces it via
+ * `toString`, so the body arrives as `[object Object]` — not JSON — and Elysia
+ * rejects it before the handler runs. Every sign-in would fail with a bare 400
+ * that gives no hint the deployment was at fault.
+ *
+ * The other shapes are passed through untouched: a Buffer or string is already
+ * valid, and a stream is left alone so it is not consumed here.
+ */
+function requestBody(body: unknown): BodyInit | null {
+  if (body === undefined || body === null) return null
+  if (typeof body === 'string') return body
+  if (body instanceof Uint8Array) return body as BodyInit
+  if (typeof (body as { getReader?: unknown }).getReader === 'function')
+    return body as BodyInit
+
+  return JSON.stringify(body)
+}
+
 function toWebRequest(req: VercelRequest, origin: string): Request {
   const url = new URL(req.url ?? '/', origin)
   const headers = new Headers()
@@ -47,15 +69,16 @@ function toWebRequest(req: VercelRequest, origin: string): Request {
 
   const method = req.method ?? 'GET'
   const hasBody = method !== 'GET' && method !== 'HEAD'
+  const payload = hasBody ? requestBody(req.body) : null
 
-  if (!hasBody || req.body === undefined) {
+  if (payload === null) {
     return new Request(url, { method: method, headers: headers })
   }
 
   const init: RequestInit & { duplex?: string } = {
     method: method,
     headers: headers,
-    body: req.body as BodyInit,
+    body: payload,
     // Required by the fetch spec whenever a stream body is supplied; Bun
     // enforces it rather than inferring.
     duplex: 'half',

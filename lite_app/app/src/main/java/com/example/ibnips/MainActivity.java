@@ -37,9 +37,7 @@ public class MainActivity extends Activity {
     private static final int    PERM_REQ      = 1001;
     private static final int    SCAN_DELAY    = 2500; // ms before reading scan results
     private static final String PREF_TAGGED   = "tagged_locations_json";
-    private static final String PREF_ACCESS_KEY = "access_key";
-    /** The email whose account the app logs in as. */
-    private static final String AUTH_EMAIL    = "user@kiit.ac.in";
+    private static final String PREF_ACCESS_CODE = "access_code";
     /** Visits of a room below which the app suggests more tagging. Matches the
      *  backend's WELL_MAPPED_READINGS. */
     private static final int    WELL_MAPPED_SAMPLES = 10;
@@ -76,7 +74,7 @@ public class MainActivity extends Activity {
     /** Why the last login attempt failed, or "" if it has not been tried. */
     private String                  lastAuthError   = "";
     /** The key we last sent, so we don't send it twice for no reason. */
-    private String                  lastTriedKey    = "";
+    private String                  lastTriedKey    = "";   // last code we exchanged for a token
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
@@ -136,10 +134,10 @@ public class MainActivity extends Activity {
         // Load persistent tagged locations
         loadTaggedLocations();
 
-        // Restore the saved access key and log in if there is one.
-        accessKeyInput.setText(loadAccessKey());
-        if (loadAccessKey().isEmpty()) {
-            setStatus("Enter the access key to connect", true);
+        // Restore the saved access code and log in if there is one.
+        accessKeyInput.setText(loadAccessCode());
+        if (loadAccessCode().isEmpty()) {
+            setStatus("Paste your access code to connect", true);
         } else {
             authenticateInBackground();
         }
@@ -163,51 +161,51 @@ public class MainActivity extends Activity {
      * Saves the key so the user only types it once, then retries.
      */
     private void authenticateInBackground() {
-        final String key = accessKeyInput.getText().toString().trim();
+        final String code = accessKeyInput.getText().toString().trim();
 
-        if (key.isEmpty()) {
+        if (code.isEmpty()) {
             authToken = null;
             lastAuthError = "";
-            setStatus("Enter the access key to connect", true);
+            setStatus("Paste your access code to connect", true);
             return;
         }
 
         // Pressing Done also closes the keyboard, which fires the focus
-        // listener. Skip the repeat when this exact key already got us a token.
-        if (key.equals(lastTriedKey) && authToken != null) return;
+        // listener. Skip the repeat when this exact code already got us a token.
+        if (code.equals(lastTriedKey) && authToken != null) return;
 
-        lastTriedKey = key;
-        setStatus("Authenticating…", false);
+        lastTriedKey = code;
+        setStatus("Signing in…", false);
         runInBackground(() -> {
-            String token = backendClient.authenticate(AUTH_EMAIL, key);
+            String token = backendClient.authenticate(code);
             mainHandler.post(() -> {
                 if (token != null) {
                     authToken = token;
                     lastAuthError = "";
-                    saveAccessKey(key);
+                    saveAccessCode(code);
                     setStatus("Ready", false);
                 } else {
-                    // Say what the server actually said. "Wrong access key" was
-                    // all we used to show, which is indistinguishable from an
-                    // unreachable server or a rejected body.
+                    // Say what the server actually said, because the usual
+                    // reason is a code that was rotated or revoked rather than
+                    // one that was never right.
                     authToken = null;
                     lastAuthError = backendClient.getLastError();
-                    setStatus("Auth failed: " + lastAuthError, true);
+                    setStatus("Sign-in failed: " + lastAuthError, true);
                     Toast.makeText(MainActivity.this,
-                            "Login refused: " + lastAuthError, Toast.LENGTH_LONG).show();
+                            "Sign-in refused: " + lastAuthError, Toast.LENGTH_LONG).show();
                 }
             });
         });
     }
 
-    private void saveAccessKey(String key) {
+    private void saveAccessCode(String code) {
         SharedPreferences prefs = getSharedPreferences("ibnIPS_prefs", MODE_PRIVATE);
-        prefs.edit().putString(PREF_ACCESS_KEY, key).apply();
+        prefs.edit().putString(PREF_ACCESS_CODE, code).apply();
     }
 
-    private String loadAccessKey() {
+    private String loadAccessCode() {
         SharedPreferences prefs = getSharedPreferences("ibnIPS_prefs", MODE_PRIVATE);
-        return prefs.getString(PREF_ACCESS_KEY, "");
+        return prefs.getString(PREF_ACCESS_CODE, "");
     }
 
     // ------------------------------------------------------------------
@@ -267,19 +265,19 @@ public class MainActivity extends Activity {
         // than the one just saved locally.
         final List<WifiScanResult> scans = new ArrayList<>(lastScanResults);
         runInBackground(() -> {
-            // Log in here if we have a key but no token yet. Tapping PING
-            // straight after typing the key lost the race against the login
+            // Log in here if we have a code but no token yet. Tapping PING
+            // straight after pasting the code lost the race against the login
             // started by the focus listener, so the ping went out with no
             // token and the room was only saved on the phone.
-            String key = accessKeyInput.getText().toString().trim();
+            String code = accessKeyInput.getText().toString().trim();
             String token = authToken;
-            if (token == null && !key.isEmpty()) {
-                token = backendClient.authenticate(AUTH_EMAIL, key);
+            if (token == null && !code.isEmpty()) {
+                token = backendClient.authenticate(code);
             }
 
             if (token == null) {
                 String error = backendClient.getLastError();
-                final String why = error.isEmpty() ? "no access key entered" : error;
+                final String why = error.isEmpty() ? "no access code entered" : error;
                 mainHandler.post(() -> setStatus(
                         "Saved on phone only — not sent to server (" + why + ")", true));
                 return;
@@ -304,7 +302,7 @@ public class MainActivity extends Activity {
                     // Keep the token so the next ping doesn't log in again.
                     authToken = bearer;
                     lastAuthError = "";
-                    if (!key.isEmpty()) saveAccessKey(key);
+                    if (!code.isEmpty()) saveAccessCode(code);
                     setStatus("Pinged & Saved: " + roomName + " (" + scans.size() + " APs)", false);
                     Toast.makeText(MainActivity.this, "Tagged location '" + roomName + "' with " + scans.size() + " Wi-Fi signals", Toast.LENGTH_SHORT).show();
                 } else {

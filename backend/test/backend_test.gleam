@@ -1,3 +1,4 @@
+import access_code
 import app_auth
 import birl
 import gleam/float
@@ -657,35 +658,66 @@ pub fn ping_accepts_ordinary_readings_test() {
   assert ping.validate_ping(ping) == Ok(Nil)
 }
 
-// --- access key ---
+// --- access codes ---
 //
-// The key is the only thing stopping anyone claiming another user's account,
-// since POST /api/auth will otherwise mint a token for any address.
+// The code is the credential now: POST /api/auth will not mint a token without
+// one, and nothing about the caller is taken from the request. The risk these
+// cover is the digest disagreeing with the auth service, which would make every
+// genuinely valid code look unknown.
 
-pub fn access_key_accepts_the_configured_key_test() {
-  assert app_auth.is_valid_access_key(
-    "correct-horse-battery",
-    Ok("correct-horse-battery"),
-  )
+pub fn hash_code_matches_the_auth_service_test() {
+  // Fixed vectors taken from Node's
+  // createHash('sha256').update(raw, 'utf8').digest('hex') — the same call
+  // kiit-auth-v2 makes. If this fails, no code will ever authenticate.
+  assert access_code.hash_code("kiit_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
+    == "cc2255a442b5442c1865224001486d3cc08a9038fbdf03accf25ce1a1f21e5fb"
+
+  assert access_code.hash_code("kiit_test")
+    == "107460c3c3b1c8c51a711c3ec082f26e35453822a830030e85366f33d125a5db"
+
+  assert access_code.hash_code("")
+    == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 }
 
-pub fn access_key_rejects_a_wrong_key_test() {
-  assert !app_auth.is_valid_access_key("wrong", Ok("correct-horse-battery"))
+// The column this is looked up against is TEXT, so upper-case hex would miss
+// every row without anything looking wrong.
+pub fn hash_code_is_lower_case_hex_of_a_fixed_width_test() {
+  let hash = access_code.hash_code("kiit_anything")
+  assert string.length(hash) == 64
+  assert hash == string.lowercase(hash)
 }
 
-pub fn access_key_rejects_an_empty_key_test() {
-  assert !app_auth.is_valid_access_key("", Ok("correct-horse-battery"))
+pub fn hash_code_distinguishes_codes_test() {
+  assert access_code.hash_code("kiit_aaa") != access_code.hash_code("kiit_aab")
 }
 
-pub fn access_key_rejects_a_key_that_is_a_prefix_test() {
-  assert !app_auth.is_valid_access_key(
-    "correct-horse",
-    Ok("correct-horse-battery"),
-  )
+pub fn hash_code_is_stable_test() {
+  assert access_code.hash_code("kiit_stable")
+    == access_code.hash_code("kiit_stable")
 }
 
-pub fn access_key_rejects_everything_when_none_is_configured_test() {
-  assert !app_auth.is_valid_access_key("anything", Error("AUTH_KEY is not set"))
+// --- submitted code hygiene ---
+//
+// Bounds what gets hashed and rejects a blank field, so a caller cannot make
+// the server hash an arbitrarily long string or mint nothing at all.
+
+pub fn normalise_code_rejects_an_empty_code_test() {
+  assert app_auth.normalise_code("") == Error("Missing access code")
+}
+
+pub fn normalise_code_rejects_a_whitespace_only_code_test() {
+  assert app_auth.normalise_code("   \n ") == Error("Missing access code")
+}
+
+pub fn normalise_code_trims_surrounding_whitespace_test() {
+  // Copying a code out of a web page routinely brings a trailing newline, and
+  // rejecting that would look like an invalid code rather than a typo.
+  assert app_auth.normalise_code("  kiit_abc\n") == Ok("kiit_abc")
+}
+
+pub fn normalise_code_rejects_an_oversized_code_test() {
+  assert app_auth.normalise_code(string.repeat("a", 513))
+    == Error("Access code is not a valid code")
 }
 
 // --- one visit per scan ---

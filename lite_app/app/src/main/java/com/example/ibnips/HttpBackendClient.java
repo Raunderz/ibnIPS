@@ -87,17 +87,20 @@ public class HttpBackendClient {
     // ------------------------------------------------------------------
 
     /**
-     * Exchanges an email and the shared access key for a bearer token.
+     * Exchanges an access code for a bearer token.
      *
-     * @param email    e.g. "user@kiit.ac.in"
-     * @param accessKey the shared secret configured as AUTH_KEY on the server
+     * The code is issued by the KIIT sign-in site after Google verifies who the
+     * user is; the server resolves it to a roll number itself. Nothing about the
+     * user is sent from here, so there is no way for this app to ask to be
+     * somebody else.
+     *
+     * @param accessCode the code the user got from the sign-in site
      * @return token string, or null on failure
      */
-    public String authenticate(String email, String accessKey) {
+    public String authenticate(String accessCode) {
         try {
             JSONObject body = new JSONObject();
-            body.put("email", email);
-            body.put("access_key", accessKey);
+            body.put("code", accessCode);
 
             JSONObject response = post("/api/auth", null, body);
             if (response == null) return null;

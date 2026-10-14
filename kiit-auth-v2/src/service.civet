@@ -1,12 +1,14 @@
 // service.civet
 // Identity and access-code lifecycle.
 //
-// The contract with the Gleam backend is deliberately tiny: a code plus the
-// roll number it is bound to, and nothing else. The backend resolves a code to
-// a roll number by looking up `code_hash` and reading `roll_number`, then
-// issues its own session. Because the roll number now comes from this table
-// rather than from a request body, the impersonation hole in the old shared
-// `AUTH_KEY` model is closed.
+// The contract with the Gleam backend is deliberately tiny: a code, and the
+// roll number and email it is bound to. The backend hashes the code, looks up
+// `code_hash` in this table, reads `roll_number` to identify the caller, and
+// pins the same hash onto its own session so that rotating the code here
+// invalidates every session issued against the old one.
+//
+// Because the roll number now comes from this table rather than from a request
+// body, the impersonation hole in the old shared `AUTH_KEY` model is closed.
 //
 // Two properties are worth stating because they are easy to lose in a rewrite:
 //

@@ -75,7 +75,7 @@ pub type PingRequest {
 /// `POST /api/auth` issues a token to whoever asks: without the key, anyone
 /// could claim any account.
 pub type AuthRequest {
-  AuthRequest(email: String, access_key: String)
+  AuthRequest(code: String)
 }
 
 /// What the app sends to ask where it is: the current Wi-Fi scan and nothing
@@ -150,10 +150,13 @@ pub type MapData {
 // These functions tell Gleam how to parse JSON into our types.
 
 /// Decoder for an `AuthRequest` from JSON.
+///
+/// Only the code. There is deliberately no email or user id field to decode,
+/// because there is nothing a caller could put there that would be believed —
+/// the roll number is whatever the code is already bound to.
 pub fn decode_auth_request() -> decode.Decoder(AuthRequest) {
-  use email <- decode.field("email", decode.string)
-  use access_key <- decode.field("access_key", decode.string)
-  decode.success(AuthRequest(email, access_key))
+  use code <- decode.field("code", decode.string)
+  decode.success(AuthRequest(code))
 }
 
 /// Decoder for a single `Fingerprint` from JSON.

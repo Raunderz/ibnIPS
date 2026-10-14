@@ -1,0 +1,24 @@
+# Uploaded sources Vercel does not need at runtime.
+#
+# Deliberately conservative. Only two kinds of thing are listed:
+#
+#   - `node_modules`, which Vercel reinstalls from the lockfile anyway
+#   - `.cache`, `coverage`, logs, and `.env`, which are local-only
+#
+# `scripts/` is NOT ignored even though the running service never touches it:
+# `vercel.json` runs `scripts/check.sh` as the build command, and the build runs
+# in the uploaded directory, so excluding it would break the deploy itself.
+#
+# `build/` is not ignored either. It is gitignored because it is generated on
+# every deploy, not because it is unwanted in the bundle.
+#
+# `public/` is never ignored: the login page is read off the filesystem at
+# module load, so it has to travel with the function.
+
+node_modules
+.cache
+coverage
+*.log
+.env
+.env.*
+!.env.example

@@ -232,11 +232,17 @@ CREATE TABLE IF NOT EXISTS users (
   // session_id is a random UUID stored inside the JWT's "sid" claim.
   // expires_at is unix epoch seconds. A cron job or cleanup could delete old rows.
   // ON DELETE CASCADE: if user is deleted, their sessions are too.
+  //
+  // code_hash pins the session to the access code it was issued against, which
+  // is what makes rotation a real revocation. Rotating a code changes the hash
+  // in `auth_identities`, so a session holding the old one stops matching on the
+  // next request rather than staying good for its full lifetime.
   let sessions_sql =
     "
 CREATE TABLE IF NOT EXISTS sessions (
   session_id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL,
+  code_hash TEXT,
   created_at INTEGER DEFAULT (unixepoch()),
   expires_at INTEGER NOT NULL,
   FOREIGN KEY(user_id) REFERENCES users(user_id) ON DELETE CASCADE
@@ -297,7 +303,59 @@ CREATE TABLE IF NOT EXISTS feedback (
       )
   }
 
+  // Bring an already-deployed database up to the `sessions` shape above.
+  let _ = migrate_session_code_hash(conn)
+
   Ok(Nil)
+}
+
+/// Add `sessions.code_hash` to a database created before the column existed.
+///
+/// `CREATE TABLE IF NOT EXISTS` guards a table's existence but never its shape,
+/// so a database that already has `sessions` keeps the old definition forever
+/// without this. Guarded by a column check rather than by catching the error,
+/// because "duplicate column name" and "the database is unreachable" would
+/// otherwise be indistinguishable at the call site.
+///
+/// Existing rows come out NULL, which is correct rather than a gap: those
+/// sessions were issued under the old shared-`AUTH_KEY` model, they cannot be
+/// tied to any code, and `validate_session` requires a match against a live
+/// code. Every one of them stops working here, which is the intended effect of
+/// changing who is allowed to authenticate.
+fn migrate_session_code_hash(conn: Connection) -> Result(Nil, Nil) {
+  case has_column(conn, "sessions", "code_hash") {
+    True -> Ok(Nil)
+    False ->
+      db_query.exec_plain(
+        "ALTER TABLE sessions ADD COLUMN code_hash TEXT",
+        conn,
+      )
+  }
+}
+
+/// Whether `table` already has a column called `column`.
+///
+/// Written against the `pragma_table_info` table-valued function rather than
+/// `PRAGMA table_info(...)` so the table name can be bound as a parameter
+/// instead of being pasted into the statement.
+pub fn has_column(conn: Connection, table: String, column: String) -> Bool {
+  let sql = "SELECT name FROM pragma_table_info(?) WHERE name = ? LIMIT 1"
+  let decoder = {
+    use name <- decode.field("name", decode.string)
+    decode.success(name)
+  }
+  case
+    db_query.query_as_maps(
+      sql,
+      on: conn,
+      with: [sqlight.text(table), sqlight.text(column)],
+      expecting: decoder,
+    )
+  {
+    Ok([]) -> False
+    Ok(_) -> True
+    Error(_) -> False
+  }
 }
 
 /// Copy readings out of the old `fingerprints` table into `room_aps`.

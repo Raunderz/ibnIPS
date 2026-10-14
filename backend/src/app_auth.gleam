@@ -2,18 +2,26 @@
 // Authentication handlers and middleware.
 //
 // Flow:
-//   POST /api/auth -> validate domain -> extract roll_no -> upsert user
-//                   -> create session -> sign JWT -> return token
+//   POST /api/auth -> resolve access code -> upsert user -> create session
+//                   -> sign JWT -> return token
 //
 //   Protected routes -> validate Bearer header -> verify JWT -> check session
-//                     -> extract roll_no -> call handler
+//                     is still backed by a live code -> extract roll_no
+//
+// An access code is issued by the auth service (kiit-auth-v2) after it verifies
+// a Google identity, and is redeemed here against the `auth_identities` table
+// that service owns. Both live in the same database, so there is no call out to
+// it and no way for it being down to stop anyone logging in.
+//
+// Nothing about the user comes from the request. The old model took an email
+// and a shared secret and trusted both, so anyone holding the secret could log
+// in as any address on the domain; now the roll number is whatever the code is
+// already bound to.
 
+import access_code
 import birl
 import db
 import db_query
-import env
-import gleam/bit_array
-import gleam/crypto
 import gleam/dynamic/decode
 import gleam/http/request
 import gleam/json
@@ -23,53 +31,29 @@ import models.{type AuthRequest, ErrorResponse}
 import sqlight
 import wisp
 
-// --- Access Key Validation ---
+// --- Code Handling ---
 
-/// Whether the supplied key matches the one from `AUTH_KEY`.
+/// Trim a submitted code, or reject it if nothing is left.
 ///
-/// Compared in constant time so that a caller cannot discover the key one
-/// character at a time by timing how long the rejection takes.
-///
-/// `expected` is `Error` when `AUTH_KEY` is unset. That rejects every login
-/// rather than accepting every login: a server with no key configured must not
-/// hand out tokens to whoever asks.
-pub fn is_valid_access_key(
-  supplied: String,
-  expected: Result(String, String),
-) -> Bool {
-  case expected {
-    Error(_) -> False
-    Ok(expected_key) ->
-      crypto.secure_compare(
-        bit_array.from_string(supplied),
-        bit_array.from_string(expected_key),
-      )
-  }
-}
+/// The length ceiling is not about the digest — it bounds what gets hashed, so
+/// a caller cannot make the server spend time on an arbitrarily long string.
+/// It is deliberately far above any real code, which is `kiit_` plus 32
+/// characters of base64url.
+const max_code_length: Int = 512
 
-/// Check the email is `something@kiit.ac.in`.
+/// Trim a submitted code, or reject it if nothing is left.
 ///
-/// Case-insensitive, and the domain check and the split are done on the same
-/// lower-cased value — otherwise `23B1234@KIIT.AC.IN` passes the domain check
-/// and then fails the split.
-fn is_valid_email(email: String) -> Bool {
-  string.ends_with(string.lowercase(email), "@kiit.ac.in")
-}
-
-/// Extract the roll number from an email.
-///
-/// `"23b1234@kiit.ac.in"` -> `Ok("23b1234")`
-///
-/// Rejects an empty roll number, which would otherwise become a user whose id
-/// is the empty string.
-fn extract_roll_number(email: String) -> Result(String, String) {
-  case string.split(email, "@") {
-    [roll_no, "kiit.ac.in"] ->
-      case roll_no == "" {
-        True -> Error("Invalid email format: must be roll_no@kiit.ac.in")
-        False -> Ok(roll_no)
+/// Public so the hygiene rules can be tested without a request; it is not part
+/// of the service's surface.
+pub fn normalise_code(submitted: String) -> Result(String, String) {
+  let trimmed = string.trim(submitted)
+  case trimmed {
+    "" -> Error("Missing access code")
+    _ ->
+      case string.length(trimmed) > max_code_length {
+        True -> Error("Access code is not a valid code")
+        False -> Ok(trimmed)
       }
-    _ -> Error("Invalid email format: must be roll_no@kiit.ac.in")
   }
 }
 
@@ -81,14 +65,23 @@ fn generate_session_id() -> String {
   wisp.random_string(64)
 }
 
-/// How long a token stays valid, in seconds. 24 hours.
-const session_length_seconds: Int = 86_400
+/// How long a token stays valid, in seconds. 30 days.
+///
+/// Fixed from the moment the code is redeemed, not extended on use. A sliding
+/// window would mean a stolen code never expires for as long as whoever took it
+/// keeps using it.
+///
+/// This is a backstop, not the control. A session stops working the moment its
+/// code is rotated, its identity is revoked, or the user logs out — all three
+/// are checked per request in `validate_session` — so a long lifetime costs a
+/// stolen token a month of exposure in the case where none of those happen.
+const session_length_seconds: Int = 2_592_000
 
 /// Create a new JWT for a user.
 /// - sub: roll number
 /// - sid: session_id (stored in DB)
 /// - iat: now
-/// - exp: now + 24 hours
+/// - exp: now + session_length_seconds
 fn create_jwt(user_id: String, session_id: String, secret: String) -> String {
   let now = birl.to_unix(birl.now())
 
@@ -124,30 +117,51 @@ fn upsert_user(
   ])
 }
 
-/// Create a new session row.
+/// Create a new session row, pinned to the code it was redeemed against.
 fn insert_session(
   conn: db.Connection,
   session_id: String,
   user_id: String,
+  code_hash: String,
   expires_at: Int,
 ) -> Result(Nil, String) {
   let sql =
-    "INSERT INTO sessions (session_id, user_id, expires_at) VALUES (?, ?, ?)"
+    "INSERT INTO sessions (session_id, user_id, code_hash, expires_at)
+     VALUES (?, ?, ?, ?)"
   db_query.exec_with_args(sql, on: conn, with: [
     sqlight.text(session_id),
     sqlight.text(user_id),
+    sqlight.text(code_hash),
     sqlight.int(expires_at),
   ])
 }
 
-/// Look up session by ID and check it's not expired.
-/// Returns user_id if valid session.
+/// Look up a session and report its user, but only while the code behind it
+/// still redeems to a live identity.
+///
+/// This one statement is what makes a long-lived token safe. It has to hold for
+/// every route, so all four ways a session can end are folded into it:
+///
+///   - `expires_at > unixepoch()` — the 30-day backstop
+///   - the row still being present — logout deleted it
+///   - `s.code_hash = a.code_hash` — rotation replaced the digest
+///   - `a.revoked_at IS NULL` — the identity was revoked outright
+///
+/// Joining on the digest rather than the roll number is deliberate: `code_hash`
+/// is UNIQUE and therefore indexed, whereas a roll number comparison would also
+/// have to agree on letter case across two services that derive it differently.
 fn validate_session(
   conn: db.Connection,
   session_id: String,
 ) -> Result(String, String) {
   let sql =
-    "SELECT user_id FROM sessions WHERE session_id = ? AND expires_at > unixepoch()"
+    "SELECT s.user_id
+     FROM sessions s
+     JOIN auth_identities a ON a.code_hash = s.code_hash
+     WHERE s.session_id = ?
+       AND s.expires_at > unixepoch()
+       AND a.revoked_at IS NULL
+     LIMIT 1"
   let decoder = {
     use user_id <- decode.field("user_id", decode.string)
     decode.success(user_id)
@@ -208,18 +222,16 @@ fn parse_auth_body(body: String) -> Result(AuthRequest, Nil) {
 // --- Public Handler: POST /api/auth ---
 
 /// POST /api/auth
-/// Request: {"email": "23b1234@kiit.ac.in", "access_key": "..."}
+/// Request: {"code": "kiit_..."}
 /// Response: {"token": "<jwt>", "user_id": "23b1234"}
 ///
 /// Steps:
 /// 1. Parse JSON body
-/// 2. Check the access key against `AUTH_KEY`
-/// 3. Validate email domain
-/// 4. Extract roll number
-/// 5. Upsert user in DB
-/// 6. Generate session
-/// 7. Sign JWT
-/// 8. Return token + user_id
+/// 2. Hash the code and look up the identity it is bound to
+/// 3. Upsert user in DB
+/// 4. Create session, pinned to that code's digest
+/// 5. Sign JWT
+/// 6. Return token + user_id
 pub fn handle_auth(
   request: wisp.Request,
   conn: db.Connection,
@@ -229,38 +241,33 @@ pub fn handle_auth(
 
   case parse_auth_body(body) {
     Error(_) -> error(400, "invalid_json", "Could not parse request body")
-    Ok(auth_req) -> check_access_key(auth_req, conn, jwt_secret)
+    Ok(auth_req) -> redeem_code(auth_req, conn, jwt_secret)
   }
 }
 
-/// Reject the request unless it carries the shared access key.
+/// Turn a submitted code into the identity it redeems to.
 ///
-/// The key is checked before the email, so a wrong key gives the same answer
-/// whatever email was sent with it. Otherwise the response would confirm which
-/// addresses are real.
-fn check_access_key(
+/// An unknown code and a revoked one are the same answer on purpose. The
+/// difference between "that code does not exist" and "that code was withdrawn"
+/// is not something a caller who is not signed in is entitled to.
+fn redeem_code(
   auth_req: AuthRequest,
   conn: db.Connection,
   jwt_secret: String,
 ) -> wisp.Response {
-  case is_valid_access_key(auth_req.access_key, env.auth_key()) {
-    False -> error(401, "unauthorized", "Invalid or missing access key")
-    True -> check_email(auth_req, conn, jwt_secret)
-  }
-}
-
-/// Check the email is an institutional one and turn it into a user id.
-fn check_email(
-  auth_req: AuthRequest,
-  conn: db.Connection,
-  jwt_secret: String,
-) -> wisp.Response {
-  case is_valid_email(auth_req.email) {
-    False -> error(403, "unauthorized", "Email must end with @kiit.ac.in")
-    True ->
-      case extract_roll_number(string.lowercase(auth_req.email)) {
-        Error(msg) -> error(400, "invalid_email", msg)
-        Ok(user_id) -> create_session(conn, jwt_secret, user_id, auth_req)
+  case normalise_code(auth_req.code) {
+    Error(msg) -> error(401, "unauthorized", msg)
+    Ok(raw) ->
+      case access_code.find_owner(conn, access_code.hash_code(raw)) {
+        Error(_) -> error(401, "unauthorized", "Invalid or expired access code")
+        Ok(owner) ->
+          create_session(
+            conn,
+            jwt_secret,
+            owner.roll_number,
+            owner.email,
+            owner.code_hash,
+          )
       }
   }
 }
@@ -270,15 +277,16 @@ fn create_session(
   conn: db.Connection,
   jwt_secret: String,
   user_id: String,
-  auth_req: AuthRequest,
+  email: String,
+  code_hash: String,
 ) -> wisp.Response {
-  case upsert_user(conn, user_id, auth_req.email) {
+  case upsert_user(conn, user_id, email) {
     Error(msg) -> error(500, "database_error", msg)
     Ok(Nil) -> {
       let session_id = generate_session_id()
       let expires = birl.to_unix(birl.now()) + session_length_seconds
 
-      case insert_session(conn, session_id, user_id, expires) {
+      case insert_session(conn, session_id, user_id, code_hash, expires) {
         Error(msg) -> error(500, "database_error", msg)
         Ok(Nil) -> {
           // Housekeeping: drop sessions that have expired.

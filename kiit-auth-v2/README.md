@@ -16,18 +16,23 @@ on **Bun**, deployed to **Vercel**, backed by **Turso/libSQL**.
 ```
 kiit-auth  ── verifies Google ID token, issues an access code bound to a roll number
     │
-    ├── auth_identities.code_hash  →  roll_number      (the contract)
+    ├── auth_identities.code_hash  →  roll_number, email   (the contract)
     │
 backend (Gleam)  ── resolves a code to a roll number, issues its own JWT + session
 ```
 
-The backend reads exactly two columns, `code_hash` and `roll_number`. It never
-needs to call this service at runtime, so **kiit-auth being down does not stop
-anyone logging in** — only issuing and rotating new codes.
+The backend reads three columns, `code_hash`, `roll_number` and `email`, and
+pins `code_hash` onto the session it issues. That pin is what makes rotation a
+real revocation: rotating a code here changes the digest, so the backend stops
+honouring every session issued against the old one on its next request, rather
+than at some later expiry.
+
+It never needs to call this service at runtime, so **kiit-auth being down does
+not stop anyone logging in** — only issuing and rotating new codes.
 
 Codes are long-lived rather than single-use, because the Android app
 re-authenticates on every launch after its JWT expires; a burned code would send
-users back to Google every 24 hours. The security win here is the binding, not
+users back to Google every 30 days. The security win here is the binding, not
 short-lived credentials.
 
 ## API
@@ -78,6 +83,34 @@ and forwards, so `x-forwarded-for` is the only place that address appears.
 Set it to the real hop count.
 
 ## Deployment notes
+
+### Deploying to Vercel
+
+`.env` is gitignored, so a deploy never carries it. Set these as project
+environment variables in the Vercel dashboard instead — for **Production** and
+for **Preview** separately, since each has its own copy:
+
+| Variable         | Preview | Production |
+| ---------------- | ------- | ---------- |
+| `DATABASE_URL`   | yes     | yes        |
+| `DATABASE_TOKEN` | yes     | yes        |
+| `GOOGLE_CLIENT_ID` | yes   | yes        |
+| `TRUST_PROXY`    | `1`     | `1`        |
+
+`GOOGLE_CLIENT_ID` is a single Web client id, so the same one can be reused
+across previews — but its **authorised JavaScript origins** have to list each
+deployment origin, or Google refuses the token. A preview that redirects the
+app at `*.vercel.app` needs that wildcard present in the Google console.
+
+**The build.** `vercel.json` runs `scripts/check.sh`, which compiles the Civet
+sources to `build/src/*.ts`; the function in `api/index.ts` imports from there
+rather than from `src/`. Nothing needs to be committed for that — the build
+directory is gitignored precisely because it is generated on every deploy.
+
+**Verifying a deploy.** `GET /healthz` answers `200` with
+`{"status":"ok","database":"connected"}` when the secrets are set and Turso is
+reachable, and `503` with `not configured` when they are not. That is the
+cheapest way to tell a missing environment variable from a real outage.
 
 **Rate limits live in the database, not in memory.** Serverless instances are
 recycled constantly, so a `Map` of counters resets and the limit is never
