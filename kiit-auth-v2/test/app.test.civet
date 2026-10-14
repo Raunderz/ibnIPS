@@ -124,13 +124,14 @@ test('unknown routes return a JSON 404', async () =>
 
 // The rate limit is checked before the credential, deliberately: checking the
 // credential first would let an attacker probe without ever being limited. With
-// the database down the limiter therefore answers 429, which is still correct —
-// it refuses either way. Against a reachable database this is a 401.
+// the database down the request is refused even earlier, with 503, which is
+// still correct — it refuses either way. Against a reachable database this is a
+// 401.
 test('protected routes require a code', async () =>
   const response = await fetch(origin + '/api/me')
   const body = (await response.json()) as { error: string }
 
-  expect([401, 429]).toContain(response.status)
+  expect([401, 429, 503]).toContain(response.status)
   expect(body.error).toBeTruthy()
 )
 
@@ -139,25 +140,27 @@ test('a malformed code is never accepted', async () =>
     headers: { 'x-api-key': 'not-a-kiit-code!' },
   })
 
-  expect([401, 429]).toContain(response.status)
+  expect([401, 429, 503]).toContain(response.status)
 )
 
-// Failing closed is the property that matters: a rate limiter that cannot reach
-// its store must refuse, not wave traffic through.
-test('auth refuses when the rate limiter cannot reach the database', async () =>
+// Failing closed is the property that matters: a route that cannot reach the
+// database must refuse, not wave traffic through. The schema is checked before
+// the counter is touched, because the counter itself lives in that database, so
+// the refusal now arrives as 503 — which is also the honest answer, since a
+// database that is down is not a user sending too many requests.
+test('auth refuses when the database cannot be reached', async () =>
   const response = await fetch(origin + '/auth/google', {
     method: 'POST'
     headers: { 'Content-Type': 'application/json' }
     body: JSON.stringify({ credential: 'anything' })
   })
 
-  expect(response.status).toBe(429)
-  expect(response.headers.get('retry-after')).toBeTruthy()
+  expect(response.status).toBe(503)
 )
 
 // The body schema rejects this before the handler runs, so Elysia answers 422.
-// Against an unreachable database the rate limiter would instead answer 429.
-// What must never happen is a 500.
+// Against an unreachable database the route answers 503 instead. What must
+// never happen is a 500.
 test('a missing credential is rejected, never a 500', async () =>
   const response = await fetch(origin + '/auth/google', {
     method: 'POST'
@@ -165,7 +168,7 @@ test('a missing credential is rejected, never a 500', async () =>
     body: JSON.stringify({})
   })
 
-  expect([422, 429]).toContain(response.status)
+  expect([422, 429, 503]).toContain(response.status)
 )
 
 test('a non-string credential is rejected by the body schema', async () =>

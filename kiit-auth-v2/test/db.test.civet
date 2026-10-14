@@ -1,0 +1,45 @@
+// db.test.civet
+//
+// Only the URL translation is tested here. Everything else in this module talks
+// to the network, which a unit test must not do.
+
+import { describe, expect, test } from 'bun:test'
+import { pipelineUrl } from '../src/db.civet'
+
+describe('pipelineUrl',
+  () =>
+    test('upgrades libsql:// to https and appends the pipeline path', () =>
+      expect(pipelineUrl('libsql://db.turso.io')).toBe('https://db.turso.io/v2/pipeline')
+    )
+
+    test('upgrades the newer libsql: host form', () =>
+      expect(pipelineUrl('libsql:db.turso.io')).toBe('https://db.turso.io/v2/pipeline')
+    )
+
+    test('leaves an explicit https host alone except for the path', () =>
+      expect(pipelineUrl('https://db.turso.io')).toBe('https://db.turso.io/v2/pipeline')
+    )
+
+    // A local libsql server serves plain http, so the scheme must not be
+    // upgraded here or nothing on localhost would ever answer.
+    test('preserves an explicit http scheme', () =>
+      expect(pipelineUrl('http://localhost:8080')).toBe('http://localhost:8080/v2/pipeline')
+    )
+
+    test('does not double the path when it is already configured', () =>
+      expect(pipelineUrl('https://db.turso.io/v2/pipeline')).toBe('https://db.turso.io/v2/pipeline')
+    )
+
+    test('tolerates a trailing slash', () =>
+      expect(pipelineUrl('libsql://db.turso.io/')).toBe('https://db.turso.io/v2/pipeline')
+    )
+
+    // fetch throws on an unrecognised scheme before sending anything, so a
+    // value that survives this must be something fetch accepts.
+    test('always produces a scheme fetch accepts', () =>
+      for (const raw of ['libsql://db.turso.io', 'libsql:db.turso.io', 'https://db.turso.io', 'http://localhost:8080'])
+        expect(pipelineUrl(raw).startsWith('http://') or pipelineUrl(raw).startsWith('https://')).toBe(true)
+
+      return undefined
+    )
+)

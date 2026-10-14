@@ -178,6 +178,27 @@ function affectedFrom(result: unknown): number
   return 0
 
 /**
+ * Turn a configured database URL into the HTTP pipeline endpoint.
+ *
+ * The environment accepts `libsql://host` and `libsql:host`, which is what the
+ * Turso CLI prints, but `fetch` accepts only http:, https: and s3: — handing it
+ * `libsql://host` throws "protocol must be http:, https: or s3" before any
+ * request is made. `libsql:` also means https here, never a plain socket, so it
+ * is upgraded rather than trusted. An explicit http:// URL is preserved, which
+ * is what a local libsql server needs.
+ *
+ * The path is appended only when absent, so a full endpoint may be configured
+ * verbatim.
+ */
+export function pipelineUrl(raw: string): string
+  const scheme = /^http:\/\//i.test(raw) ? 'http://' : 'https://'
+  const rest = raw.replace(/^https?:\/\//i, '').replace(/^libsql:\/\//i, '').replace(/^libsql:/i, '')
+  const host = rest.split('/')[0] ?? ''
+  const path = rest.slice(host.length).replace(/\/+$/, '')
+
+  return scheme + host + (path is '' ? '/v2/pipeline' : path)
+
+/**
  * POST one pipeline request and hand back the first result entry.
  *
  * Each statement is its own HTTP request, so there is no BEGIN/COMMIT to be
@@ -203,7 +224,7 @@ async function send(
   let response: Response
 
   try
-    response = await fetch(conn.url, {
+    response = await fetch(pipelineUrl(conn.url), {
       method: 'POST'
       headers: {
         Authorization: 'Bearer ' + conn.token

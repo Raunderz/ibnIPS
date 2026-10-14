@@ -67,12 +67,19 @@ PAGE_TEMPLATE := readTemplate()
  *
  * connect-src and frame-src name Google's origin because the Sign-In button
  * loads and frames content from it.
+ *
+ * 'strict-dynamic' is required, not decoration: the Google Identity Services
+ * client injects inline scripts of its own into this document, and those carry
+ * no nonce and cannot carry one. Without 'strict-dynamic' they are blocked and
+ * the Sign-In button never renders. Browsers that support it then ignore the
+ * host sources, which is why the Google <script> tag in the template carries
+ * the nonce as well.
  */
 cspForNonce := (nonce: string | null): string => {
   const scriptSrc =
     nonce is null
       ? ["'self'", 'https://accounts.google.com']
-      : ["'self'", "'nonce-" + nonce + "'", 'https://accounts.google.com']
+      : ["'self'", "'nonce-" + nonce + "'", "'strict-dynamic'", 'https://accounts.google.com']
 
   return [
     "default-src 'self'"
@@ -155,6 +162,29 @@ async function ensureSchema(conn: Conn): Promise<void>
     })
 
   await migrating
+
+/**
+ * Guarantee the schema, reporting failure as a response.
+ *
+ * This must happen before the rate limiter is consulted, not after. `hit`
+ * fails closed — a counter it cannot reach answers "denied" — so on a fresh
+ * database the first request is counted against a table that does not exist
+ * yet, is refused with 429, and the only code that would have created that
+ * table is the step that never runs. Every subsequent request is refused the
+ * same way, so the service is bricked until someone creates the table by hand.
+ *
+ * A database that is genuinely unreachable must not look like a rate limit, so
+ * this answers 503 instead.
+ */
+async function ready(conn: Conn): Promise<Response | null>
+  try
+    await ensureSchema(conn)
+    return null
+  catch error
+    // The message can name internal hosts and tables, so it goes to the log
+    // and not to the client.
+    console.error('schema not available:', error)
+    return fail(503, 'Database unavailable')
 
 /**
  * Identify the caller for rate limiting.
@@ -331,6 +361,10 @@ export function buildApp()
 
     const conn = connectionFor(cfg.settings)
     const key = callerKey(request, cfg.settings)
+    const notReady = await ready(conn)
+
+    if notReady != null
+      return notReady
 
     const verdict = await hit(conn, 'auth', key, AUTH_LIMIT, 2)
 
@@ -398,6 +432,10 @@ export function buildApp()
 
     const conn = connectionFor(cfg.settings)
     const key = callerKey(request, cfg.settings)
+    const notReady = await ready(conn)
+
+    if notReady != null
+      return notReady
 
     const verdict = await hit(conn, 'api', key, API_LIMIT)
 
@@ -461,6 +499,10 @@ export function buildApp()
 
     const conn = connectionFor(cfg.settings)
     const key = callerKey(request, cfg.settings)
+    const notReady = await ready(conn)
+
+    if notReady != null
+      return notReady
 
     const verdict = await hit(conn, 'rotate', key, AUTH_LIMIT)
 

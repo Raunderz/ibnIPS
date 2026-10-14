@@ -45,6 +45,11 @@
   you can sign in again to issue a new one.
 </p>
 
+<!-- Loads Google Identity Services. It carries our nonce so that the inline
+     scripts Google injects from it are trusted under 'strict-dynamic'; without
+     the nonce on this tag those children are blocked. -->
+<script src="https://accounts.google.com/gsi/client" nonce="__CSP_NONCE__" async defer></script>
+
 <script nonce="__CSP_NONCE__">
   // Injected as a complete JSON literal by the server, so a value containing
   // quotes or angle brackets cannot break out of this script context.
