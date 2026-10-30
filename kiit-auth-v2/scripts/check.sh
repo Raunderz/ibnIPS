@@ -64,11 +64,14 @@ fi
 rm -rf build
 mkdir -p build/src build/test
 
-# Vercel needs an output directory to exist, but this service renders every
-# response from the function. Keeping it separate from build/ means the
-# compiled app is not consumed as static output and stays available to the
-# function (see `includeFiles` in vercel.json).
+# Vercel needs a non-empty output directory (it rejects an empty one with
+# STATIC_BUILD_EMPTY_OUT_DIR), but this service renders every response from the
+# function. A robots.txt is the only static file: it keeps crawlers off an auth
+# endpoint. Keeping it separate from build/ means the compiled app is not
+# consumed as static output and stays available to the function (see
+# `includeFiles` in vercel.json).
 mkdir -p static
+printf 'User-agent: *\nDisallow: /\n' > static/robots.txt
 
 shopt -s nullglob
 srcs=(src/*.civet)
