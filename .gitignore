@@ -48,6 +48,10 @@ exported_nodes_db.csv
 nodes_db.csv
 backend/.env
 
+# Map Maker generated/local data
+map_maker/icps*.db
+map_maker/map.json
+
 # Build output
 /.build-output
 
