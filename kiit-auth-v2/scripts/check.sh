@@ -75,8 +75,15 @@ fi
 # Embed the login page as a module. A serverless function must not depend on
 # tracing a readFileSync path into its bundle: whether public/index.html
 # travels with the function depends on the bundler, and a missing file throws
-# at module load, killing every route.
-bun -e 'await Bun.write("build/src/page.ts", "export const PAGE_TEMPLATE = " + JSON.stringify(await Bun.file("public/index.html").text()) + "\n")' || exit 1
+# at module load, killing every route. Emitted under both names: Civet rewrites
+# the in-app specifier to `./page.js` (exact runtime match for tracing), while
+# `tsc` resolves that specifier through `./page.ts`.
+bun -e '
+const html = await Bun.file("public/index.html").text()
+const js = "export const PAGE_TEMPLATE = " + JSON.stringify(html) + "\n"
+await Bun.write("build/src/page.js", js)
+await Bun.write("build/src/page.ts", js)
+' || exit 1
 
 if [ "${#tests[@]}" -gt 0 ]; then
   bunx civet -c "${tests[@]}" -o build/test/.ts || exit 1

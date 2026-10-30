@@ -14,13 +14,39 @@
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
-import { buildApp } from '../build/src/app.ts'
-
-const app = buildApp()
-
 type VercelRequest = IncomingMessage & { body?: unknown }
 
 type VercelResponse = ServerResponse
+
+interface App {
+  fetch(request: Request): Response | Promise<Response>
+}
+
+// The app graph is loaded through a handled promise rather than a static
+// import: a failure inside it (or in anything it imports) becomes a readable
+// 500 body from the handler below instead of FUNCTION_INVOCATION_FAILED, and
+// the rejection is marked handled before any request can observe it as
+// unhandled — an unhandled rejection at module load kills the whole worker,
+// taking every route down rather than just this one.
+const appPromise: Promise<App> = import('../build/src/app.ts').then(
+  (module) => module.buildApp()
+)
+
+appPromise.catch(() => {})
+
+function errorDetail(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
+function internalError(error: unknown): Response {
+  return new Response(
+    JSON.stringify({
+      error: 'Internal server error',
+      detail: errorDetail(error),
+    }),
+    { status: 500, headers: { 'Content-Type': 'application/json; charset=utf-8' } }
+  )
+}
 
 function originFor(req: VercelRequest): string {
   const forwardedHost = req.headers['x-forwarded-host']
@@ -110,12 +136,19 @@ export default async function handler(
   res?: VercelResponse
 ): Promise<Response | void> {
   if (res === undefined || req instanceof Request) {
-    return await app.fetch(req as Request)
+    try {
+      const app = await appPromise
+      return await app.fetch(req as Request)
+    } catch (error) {
+      console.error('unhandled error in request pipeline:', error)
+      return internalError(error)
+    }
   }
 
   const nodeReq = req as VercelRequest
 
   try {
+    const app = await appPromise
     const request = toWebRequest(nodeReq, originFor(nodeReq))
     const response = await app.fetch(request)
 
@@ -130,6 +163,6 @@ export default async function handler(
       res.setHeader('Content-Type', 'application/json; charset=utf-8')
     }
 
-    res.end(JSON.stringify({ error: 'Internal server error' }))
+    res.end(JSON.stringify({ error: 'Internal server error', detail: errorDetail(error) }))
   }
 }

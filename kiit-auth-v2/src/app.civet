@@ -61,8 +61,6 @@ async function loadTemplate(): Promise<string>
   catch
     return readTemplate()
 
-templatePromise := loadTemplate()
-
 /**
  * Build a Content-Security-Policy.
  *
@@ -327,7 +325,7 @@ export function buildApp()
     // this nonce and nothing looser.
     set.headers['content-security-policy'] = cspForNonce(nonce)
 
-    const page = (await templatePromise)
+    const page = (await loadTemplate())
       .replaceAll('__CSP_NONCE__', nonce)
       .replaceAll('__GOOGLE_CLIENT_ID__', clientId)
 
