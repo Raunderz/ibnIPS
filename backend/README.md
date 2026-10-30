@@ -28,6 +28,7 @@ The server starts on port 3000 (or `$PORT`). It creates `icps.db` automatically 
 | `MAP_JSON_URL` | Yes (prod) | Remote URL for map.json used by `GET /api/map`. Read from OS env or a `.env` file. Set this in Render. `map.json` is **not** committed. If unset, falls back to local `./map.json`. |
 | `DATABASE_URL` | No | Turso database URL, e.g. `libsql://host`. **When set to a real value it takes precedence over `DB_PATH`** and the server uses Turso instead of a local file. |
 | `DATABASE_TOKEN` | No | Turso auth token. Read together with `DATABASE_URL`; both are needed for Turso to be used. |
+| `REQUIRE_AUTH` | No | **Demo switch, off by default.** While unset, every protected route (`/api/ping`, `/api/position`, `/api/auth/logout`) accepts requests with no token and attributes them to `demo_user`; startup logs a `WARNING: auth is OFF`. Set to `1` and redeploy to restore strict Bearer-token checks. |
 
 ### Which database am I writing to?
 

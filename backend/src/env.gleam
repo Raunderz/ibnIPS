@@ -2,6 +2,7 @@
 // Environment variable helpers.
 
 import gleam/int
+import gleam/list
 import gleam/result
 import gleam/string
 
@@ -73,6 +74,25 @@ pub fn jwt_secret() -> Result(String, String) {
         <> "hardcoded fallback would let anyone forge tokens. Generate one with "
         <> "`openssl rand -hex 32` and set it in the environment.",
       )
+  }
+}
+
+// --- Auth ---
+
+/// Whether protected routes demand a token, from `REQUIRE_AUTH`.
+///
+/// Demo switch, off by default: while the Google OAuth client cannot be
+/// registered yet, the backend accepts requests with no token and attributes
+/// them to `app_auth.demo_user_id`. Set `REQUIRE_AUTH=1` (and redeploy) to
+/// restore the strict checks before this is used by real users.
+pub fn require_auth() -> Bool {
+  case get_env("REQUIRE_AUTH") {
+    Ok(value) ->
+      list.contains(
+        ["1", "true", "yes", "on"],
+        string.lowercase(string.trim(value)),
+      )
+    Error(_) -> False
   }
 }
 

@@ -41,6 +41,19 @@ pub fn main() -> Nil {
   let assert Ok(jwt_secret) = env.jwt_secret()
   io.println("JWT secret loaded.")
 
+  // Demo switch: say it loudly, so an open backend is never mistaken for a
+  // secured one in a log you are skimming.
+  case env.require_auth() {
+    True -> io.println("Auth: required (REQUIRE_AUTH is on).")
+    False ->
+      io.println(
+        "WARNING: auth is OFF (REQUIRE_AUTH is unset). Protected endpoints "
+        <> "accept requests without a token and attribute them to "
+        <> app_auth.demo_user_id
+        <> ". Set REQUIRE_AUTH=1 and redeploy to restore checks.",
+      )
+  }
+
   // Start the request quota limiter.
   let assert Ok(limiter) =
     rate_limit.start(

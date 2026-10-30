@@ -22,6 +22,7 @@ import access_code
 import birl
 import db
 import db_query
+import env
 import gleam/dynamic/decode
 import gleam/http/request
 import gleam/json
@@ -320,7 +321,27 @@ fn error(status: Int, code: String, details: String) -> wisp.Response {
 /// Returns `Ok(#(user_id, session_id))` if valid, `Error(response)` if not.
 ///
 /// This is used by require_auth and handle_logout below.
+/// The caller attributed to requests that carry no token while `REQUIRE_AUTH`
+/// is off. Every handler keeps receiving a user id, so the handlers are unaware
+/// the checks are relaxed.
+pub const demo_user_id: String = "demo_user"
+
+/// The session id reported for bypassed requests. It is not a real `sessions`
+/// row, so `POST /api/auth/logout` under the bypass is a harmless no-op.
+const bypass_session_id: String = "auth_bypass"
+
 fn validate_token(
+  req: wisp.Request,
+  conn: db.Connection,
+  jwt_secret: String,
+) -> Result(#(String, String), wisp.Response) {
+  case env.require_auth() {
+    False -> Ok(#(demo_user_id, bypass_session_id))
+    True -> validate_bearer_token(req, conn, jwt_secret)
+  }
+}
+
+fn validate_bearer_token(
   req: wisp.Request,
   conn: db.Connection,
   jwt_secret: String,
