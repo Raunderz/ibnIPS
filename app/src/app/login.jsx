@@ -29,12 +29,13 @@ export default function LoginScreen() {
   const backend = useBackendStatus()
 
   const [email, setEmail] = useState('')
+  const [accessKey, setAccessKey] = useState('')
   const [touched, setTouched] = useState(false)
 
   const emailError = touched ? getEmailError(email) : null
 
   const mutation = useMutation({
-    mutationFn: (value) => authenticate(value),
+    mutationFn: (accessKey) => authenticate(accessKey),
     onSuccess: ({ token, userId }) => {
       haptics.success()
       saveAuthSession(token, userId)
@@ -52,7 +53,7 @@ export default function LoginScreen() {
       return
     }
 
-    mutation.mutate(normalizeEmail(email))
+    mutation.mutate(accessKey)
   }
 
   const serverMessage =
@@ -95,8 +96,21 @@ export default function LoginScreen() {
               autoComplete="email"
               textContentType="emailAddress"
               error={emailError}
-              hint="Your roll number before the @ becomes your user id."
-            />
+               hint="Your roll number before the @ becomes your user id."
+             />
+
+             <TextField
+               testID="access-key-input"
+               label="Access code"
+               value={accessKey}
+               onChangeText={setAccessKey}
+               onSubmitEditing={submit}
+               returnKeyType="go"
+               placeholder="ibnips access code"
+               autoCapitalize="none"
+               autoCorrect={false}
+               secureTextEntry
+             />
 
             {serverMessage ? (
               <View
@@ -127,7 +141,7 @@ export default function LoginScreen() {
             <Text
               style={[typography.caption, styles.footnote, { color: theme.textSubtle }]}
             >
-              Signing in registers a 24 hour session with the ibnIPS backend. The
+              Signing in registers a session with the ibnIPS backend. The
               backend has no sign-out endpoint, so signing out here only clears the
               token on this device.
             </Text>
