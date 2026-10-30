@@ -12,8 +12,9 @@
 # `build/` is not ignored either. It is gitignored because it is generated on
 # every deploy, not because it is unwanted in the bundle.
 #
-# `public/` is never ignored: the login page is read off the filesystem at
-# module load, so it has to travel with the function.
+# `public/` is never ignored: `scripts/check.sh` embeds the login page into the
+# function at build time, so the file has to travel with the build, and
+# development still reads it off the filesystem.
 
 node_modules
 .cache

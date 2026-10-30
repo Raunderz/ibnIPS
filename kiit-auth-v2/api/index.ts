@@ -3,10 +3,10 @@
 // Plain TypeScript on purpose: this file is not compiled from Civet, so it
 // avoids that layer entirely. Only `src/` is Civet.
 //
-// Uses the Node-style `(req, res)` signature rather than a Web-standard
-// `fetch` export, because that format is accepted by every Vercel runtime
-// including Bun — so the deployment does not depend on newer Web-handler
-// support being enabled for the plan.
+// Handles both invocation shapes: the Node-style `(req, res)` signature and
+// the Web-standard `fetch(Request)` one. Vercel's runtimes have differed in
+// which they call, and invoking the wrong shape fails every request with
+// FUNCTION_INVOCATION_FAILED.
 //
 // The bridge is hand-rolled rather than pulled from an adapter package: it is
 // short, has no runtime dependency, and keeps `@types/node` types out of the
@@ -106,9 +106,13 @@ async function writeWebResponse(
 }
 
 export default async function handler(
-  req: VercelRequest,
-  res: VercelResponse
-): Promise<void> {
+  req: VercelRequest | Request,
+  res?: VercelResponse
+): Promise<Response | void> {
+  if (res === undefined || req instanceof Request) {
+    return await app.fetch(req as Request)
+  }
+
   try {
     const request = toWebRequest(req, originFor(req))
     const response = await app.fetch(request)

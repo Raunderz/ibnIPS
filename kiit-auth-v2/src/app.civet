@@ -29,17 +29,16 @@ import { migrate, sweepRateLimits } from './schema.civet'
 
 const here = dirname(fileURLToPath(import.meta.url))
 
-// Read once at module load. Reading per request would add a filesystem round
-// trip to every page view for a file that cannot change without a deploy.
 /**
- * Locate and read the login page.
+ * Locate and read the login page. Development and fallback path only: a
+ * deploy loads the generated `./page.ts` module instead, because a function
+ * bundle is not guaranteed to contain a file reached through a readFileSync
+ * path, and a missing file at module load would kill every route.
  *
  * Tried against two roots because this module is loaded from two different
  * places: `src/` when Bun runs the Civet sources directly in development, and
  * `build/src/` once compiled. Resolving a single relative path works in one and
- * throws ENOENT in the other. Reading once at module load also avoids a
- * filesystem round trip per request for a file that cannot change without a
- * deploy.
+ * throws ENOENT in the other.
  */
 function readTemplate(): string
   const candidates = [
@@ -55,7 +54,14 @@ function readTemplate(): string
     'login page not found; looked in ' + candidates.join(' and ')
   )
 
-PAGE_TEMPLATE := readTemplate()
+async function loadTemplate(): Promise<string>
+  try
+    const generated = await import('./page.ts')
+    return generated.PAGE_TEMPLATE
+  catch
+    return readTemplate()
+
+templatePromise := loadTemplate()
 
 /**
  * Build a Content-Security-Policy.
@@ -307,7 +313,7 @@ export function buildApp()
    * complete JSON literal so a value containing quotes or angle brackets
    * cannot break out of the script context.
    */
-  app.get('/', ({ set }) => {
+  app.get('/', async ({ set }) => {
     const cfg = settings()
 
     if cfg.problem != null
@@ -321,7 +327,7 @@ export function buildApp()
     // this nonce and nothing looser.
     set.headers['content-security-policy'] = cspForNonce(nonce)
 
-    const page = PAGE_TEMPLATE
+    const page = (await templatePromise)
       .replaceAll('__CSP_NONCE__', nonce)
       .replaceAll('__GOOGLE_CLIENT_ID__', clientId)
 

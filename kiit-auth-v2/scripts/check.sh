@@ -72,6 +72,12 @@ if [ "${#srcs[@]}" -gt 0 ]; then
   bunx civet -c "${srcs[@]}" -o build/src/.ts || exit 1
 fi
 
+# Embed the login page as a module. A serverless function must not depend on
+# tracing a readFileSync path into its bundle: whether public/index.html
+# travels with the function depends on the bundler, and a missing file throws
+# at module load, killing every route.
+bun -e 'await Bun.write("build/src/page.ts", "export const PAGE_TEMPLATE = " + JSON.stringify(await Bun.file("public/index.html").text()) + "\n")' || exit 1
+
 if [ "${#tests[@]}" -gt 0 ]; then
   bunx civet -c "${tests[@]}" -o build/test/.ts || exit 1
 fi
