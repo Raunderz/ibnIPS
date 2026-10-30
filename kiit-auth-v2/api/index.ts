@@ -14,25 +14,17 @@
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
+import { buildApp } from '../build/src/app.ts'
+
 type VercelRequest = IncomingMessage & { body?: unknown }
 
 type VercelResponse = ServerResponse
 
-interface App {
-  fetch(request: Request): Response | Promise<Response>
-}
-
-// The app graph is loaded through a handled promise rather than a static
-// import: a failure inside it (or in anything it imports) becomes a readable
-// 500 body from the handler below instead of FUNCTION_INVOCATION_FAILED, and
-// the rejection is marked handled before any request can observe it as
-// unhandled — an unhandled rejection at module load kills the whole worker,
-// taking every route down rather than just this one.
-const appPromise: Promise<App> = import('../build/src/app.ts').then(
-  (module) => module.buildApp()
-)
-
-appPromise.catch(() => {})
+// Static import on purpose: Vercel's dependency tracer only follows static
+// imports reliably, and the compiled app under build/src (plus `elysia` and
+// `jose`) has to be traced into the function bundle. `includeFiles` in
+// vercel.json is the belt-and-braces for the same reason.
+const app = buildApp()
 
 function errorDetail(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
@@ -137,7 +129,6 @@ export default async function handler(
 ): Promise<Response | void> {
   if (res === undefined || req instanceof Request) {
     try {
-      const app = await appPromise
       return await app.fetch(req as Request)
     } catch (error) {
       console.error('unhandled error in request pipeline:', error)
@@ -148,7 +139,6 @@ export default async function handler(
   const nodeReq = req as VercelRequest
 
   try {
-    const app = await appPromise
     const request = toWebRequest(nodeReq, originFor(nodeReq))
     const response = await app.fetch(request)
 

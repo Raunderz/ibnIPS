@@ -64,6 +64,12 @@ fi
 rm -rf build
 mkdir -p build/src build/test
 
+# Vercel needs an output directory to exist, but this service renders every
+# response from the function. Keeping it separate from build/ means the
+# compiled app is not consumed as static output and stays available to the
+# function (see `includeFiles` in vercel.json).
+mkdir -p static
+
 shopt -s nullglob
 srcs=(src/*.civet)
 tests=(test/*.civet)
