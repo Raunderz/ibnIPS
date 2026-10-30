@@ -8,7 +8,7 @@ import { authenticate } from '../api/auth.js'
 import { useAuthSession } from '../hooks/useAuthSession.js'
 import { saveAuthSession } from '../services/authSession.js'
 import { getSafeReturnTo } from '../utils/routes.js'
-import { getEmailError } from '../utils/validation.js'
+import { getCodeError } from '../utils/validation.js'
 
 const reasonMessages = {
   expired: 'Your 24-hour session expired. Sign in again to continue.',
@@ -17,7 +17,7 @@ const reasonMessages = {
 }
 
 export default function LoginPage() {
-  const [email, setEmail] = useState('')
+  const [accessCode, setAccessCode] = useState('')
   const [fieldError, setFieldError] = useState(null)
   const [sessionError, setSessionError] = useState(null)
   const [searchParams] = useSearchParams()
@@ -28,8 +28,7 @@ export default function LoginPage() {
   const reasonMessage = reasonMessages[reason] ?? null
 
   const authMutation = useMutation({
-    mutationFn: (emailAddress, context) =>
-      authenticate(emailAddress, context.signal),
+    mutationFn: (code, context) => authenticate(code, context.signal),
     onSuccess: ({ token, userId }) => {
       try {
         saveAuthSession(token, userId)
@@ -50,7 +49,7 @@ export default function LoginPage() {
 
   function handleSubmit(event) {
     event.preventDefault()
-    const error = getEmailError(email)
+    const error = getCodeError(accessCode)
 
     if (error) {
       setFieldError(error)
@@ -59,7 +58,7 @@ export default function LoginPage() {
 
     setFieldError(null)
     setSessionError(null)
-    authMutation.mutate(email.trim())
+    authMutation.mutate(accessCode)
   }
 
   const errorMessage = fieldError || sessionError || authMutation.error?.message
@@ -87,8 +86,8 @@ export default function LoginPage() {
             Sign in
           </h1>
           <p className="mt-2.5 text-[15px] leading-6 text-slate-400">
-            Use your KIIT email address. The backend returns a bearer token that
-            expires after 24 hours.
+            Enter the access code from the KIIT sign-in site. The backend
+            returns a bearer token that expires after 24 hours.
           </p>
 
           {reasonMessage ? (
@@ -102,25 +101,24 @@ export default function LoginPage() {
 
           <form onSubmit={handleSubmit} className="mt-6" noValidate>
             <label
-              htmlFor="email"
+              htmlFor="access-code"
               className="text-xs font-bold tracking-wide text-slate-400 uppercase"
             >
-              KIIT email
+              Access code
             </label>
             <input
-              id="email"
-              name="email"
-              type="email"
-              inputMode="email"
-              autoComplete="email"
+              id="access-code"
+              name="access-code"
+              type="text"
+              autoComplete="off"
               autoCapitalize="none"
               autoCorrect="off"
               spellCheck={false}
               enterKeyHint="go"
               required
-              value={email}
+              value={accessCode}
               onChange={(event) => {
-                setEmail(event.target.value)
+                setAccessCode(event.target.value)
 
                 if (fieldError) {
                   setFieldError(null)
@@ -136,7 +134,7 @@ export default function LoginPage() {
               }}
               aria-invalid={Boolean(errorMessage)}
               aria-describedby={errorMessage ? 'auth-error' : undefined}
-              placeholder="23b1234@kiit.ac.in"
+              placeholder="Your access code"
               className="mt-2 h-14 w-full rounded-2xl border border-white/10 bg-ink-850 px-4 text-base text-white outline-none transition-colors placeholder:text-slate-600 focus:border-brand-400/70 focus:ring-2 focus:ring-brand-400/25"
             />
 

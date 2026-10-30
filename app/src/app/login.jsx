@@ -15,7 +15,7 @@ import { authenticate } from '../api/auth.js'
 import { saveAuthSession } from '../services/authSession.js'
 import { useBackendStatus } from '../hooks/useBackendStatus.js'
 import { getSafeReturnTo } from '../utils/routes.js'
-import { getEmailError, normalizeEmail } from '../utils/validation.js'
+import { getCodeError } from '../utils/validation.js'
 import { haptics } from '../utils/haptics.js'
 import { radius, spacing, typography, useTheme } from '../theme/index.js'
 import { BackendStatusChip } from '../components/BackendStatusChip.jsx'
@@ -28,11 +28,10 @@ export default function LoginScreen() {
   const params = useLocalSearchParams()
   const backend = useBackendStatus()
 
-  const [email, setEmail] = useState('')
   const [accessKey, setAccessKey] = useState('')
   const [touched, setTouched] = useState(false)
 
-  const emailError = touched ? getEmailError(email) : null
+  const codeError = touched ? getCodeError(accessKey) : null
 
   const mutation = useMutation({
     mutationFn: (accessKey) => authenticate(accessKey),
@@ -49,7 +48,7 @@ export default function LoginScreen() {
   const submit = () => {
     setTouched(true)
 
-    if (getEmailError(email)) {
+    if (getCodeError(accessKey)) {
       return
     }
 
@@ -85,32 +84,20 @@ export default function LoginScreen() {
 
           <View style={styles.form}>
             <TextField
-              testID="email-input"
-              label="KIIT email"
-              value={email}
-              onChangeText={setEmail}
+              testID="access-key-input"
+              label="Access code"
+              value={accessKey}
+              onChangeText={setAccessKey}
               onSubmitEditing={submit}
               returnKeyType="go"
-              placeholder="23b1234@kiit.ac.in"
-              keyboardType="email-address"
-              autoComplete="email"
-              textContentType="emailAddress"
-              error={emailError}
-               hint="Your roll number before the @ becomes your user id."
-             />
-
-             <TextField
-               testID="access-key-input"
-               label="Access code"
-               value={accessKey}
-               onChangeText={setAccessKey}
-               onSubmitEditing={submit}
-               returnKeyType="go"
-               placeholder="ibnips access code"
-               autoCapitalize="none"
-               autoCorrect={false}
-               secureTextEntry
-             />
+              placeholder="Your access code"
+              autoCapitalize="none"
+              autoCorrect={false}
+              autoComplete="off"
+              secureTextEntry
+              error={codeError}
+              hint="Get your code from the KIIT sign-in site after verifying your Google account."
+            />
 
             {serverMessage ? (
               <View

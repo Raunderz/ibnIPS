@@ -17,10 +17,19 @@ function parseAuthResponse(payload) {
   }
 }
 
-export async function authenticate(email, signal) {
+/**
+ * Sign in by redeeming an access code issued by the kiit-auth service.
+ *
+ * The code is the only thing the backend accepts. It resolves the code to the
+ * roll number it is bound to, so there is no email field to send and no user
+ * identity for the caller to claim.
+ */
+export async function authenticate(accessCode, signal) {
+  const code = typeof accessCode === 'string' ? accessCode.trim() : ''
+
   const payload = await apiRequest(API_ENDPOINTS.auth, {
     method: 'POST',
-    body: { email },
+    body: { code },
     signal,
   })
 
