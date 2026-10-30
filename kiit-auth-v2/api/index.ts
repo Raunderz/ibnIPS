@@ -113,8 +113,10 @@ export default async function handler(
     return await app.fetch(req as Request)
   }
 
+  const nodeReq = req as VercelRequest
+
   try {
-    const request = toWebRequest(req, originFor(req))
+    const request = toWebRequest(nodeReq, originFor(nodeReq))
     const response = await app.fetch(request)
 
     await writeWebResponse(res, response)
