@@ -1,9 +1,9 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "buildCommand": "bash scripts/check.sh",
+  "bunVersion": "1.x",
   "functions": {
     "api/index.ts": {
-      "runtime": "bun",
       "maxDuration": 10
     }
   },
