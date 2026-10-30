@@ -1,7 +1,8 @@
-import { useEffect, useState, useSyncExternalStore } from 'react'
-import { StyleSheet, useColorScheme } from 'react-native'
+import { Component, useEffect, useState, useSyncExternalStore } from 'react'
+import { StyleSheet, Text, useColorScheme, View } from 'react-native'
+import * as ExpoSplashScreen from 'expo-splash-screen'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
-import { Redirect, Stack, usePathname } from 'expo-router'
+import { Stack } from 'expo-router'
 import { StatusBar } from 'expo-status-bar'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { QueryClientProvider } from '@tanstack/react-query'
@@ -11,17 +12,14 @@ import {
   hydrateApiConfig,
   subscribeToApiConfig,
 } from '../api/runtimeConfig.js'
-import { hydrateAuthSession } from '../services/authSession.js'
-import { useAuthSession } from '../hooks/useAuthSession.js'
 import { PositionProvider } from '../positioning/PositionProvider.jsx'
 import { useTheme } from '../theme/index.js'
-import { SplashScreen } from '../components/SplashScreen.jsx'
-
-const PUBLIC_ROUTES = new Set(['/login', '/server', '/+not-found'])
+import {SplashScreen} from '../components/SplashScreen.jsx'
 
 /**
- * Restores the persisted session and backend address before the first render,
- * so protected screens never flash before the async storage read resolves.
+ * Restores the backend address before the first render, so screens never flash
+ * before the async storage read resolves. Authentication is no longer required;
+ * users enter the app directly.
  */
 function Bootstrap({ children }) {
   const [ready, setReady] = useState(false)
@@ -34,7 +32,7 @@ function Bootstrap({ children }) {
   useEffect(() => {
     let active = true
 
-    void Promise.all([hydrateAuthSession(), hydrateApiConfig()]).finally(() => {
+    void hydrateApiConfig().finally(() => {
       if (active) {
         setReady(true)
       }
@@ -51,36 +49,41 @@ function Bootstrap({ children }) {
   }, [baseUrl])
 
   if (!ready) {
-    return <SplashScreen message="Restoring your session" />
+    return <SplashScreen message="Starting ibnIPS" />
   }
 
   return children
 }
 
+/**
+ * Pass-through gate: authentication is disabled, so children render immediately.
+ */
 function AuthGate({ children }) {
-  const { isAuthenticated, isHydrated } = useAuthSession()
-  const pathname = usePathname()
-
-  if (!isHydrated) {
-    return <SplashScreen />
-  }
-
-  const isPublic = PUBLIC_ROUTES.has(pathname)
-
-  if (!isAuthenticated && !isPublic) {
-    return <Redirect href="/login" />
-  }
-
-  if (isAuthenticated && pathname === '/login') {
-    return <Redirect href="/" />
-  }
-
   return children
 }
 
-export default function RootLayout() {
+class RootErrorBoundary extends Component {
+  constructor(props) { super(props); this.state = { error: null } }
+  static getDerivedStateFromError(error) { return { error } }
+  render() {
+    if (this.state.error) {
+      return (
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+          <Text>{String(this.state.error?.message ?? this.state.error)}</Text>
+        </View>
+      )
+    }
+    return this.props.children
+  }
+}
+
+function RootLayout() {
   const theme = useTheme()
   const isDark = useColorScheme() === 'dark'
+
+  useEffect(() => {
+    ExpoSplashScreen.hideAsync().catch(() => {})
+  }, [])
 
   return (
     <GestureHandlerRootView style={styles.root}>
@@ -123,3 +126,11 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 })
+
+export default function RootLayoutWithErrorBoundary(props) {
+  return (
+    <RootErrorBoundary>
+      <RootLayout {...props} />
+    </RootErrorBoundary>
+  )
+}

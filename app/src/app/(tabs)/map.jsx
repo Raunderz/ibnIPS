@@ -15,7 +15,6 @@ import { Card } from '../../components/Card.jsx'
 import { EmptyState } from '../../components/EmptyState.jsx'
 import { FloorSelector } from '../../components/FloorSelector.jsx'
 
-/** Stable identities, so memos downstream are not invalidated while loading. */
 const EMPTY_NODES = []
 const EMPTY_EDGES = []
 
@@ -37,14 +36,11 @@ export default function MapScreen() {
 
   const requestedNodeId = typeof params.node === 'string' ? params.node : null
 
-  // Arriving from search with ?node=… should jump straight to that room.
   const requestedNode = useMemo(
     () => nodes.find((entry) => entry.nodeId === requestedNodeId) ?? null,
     [nodes, requestedNodeId],
   )
 
-  // Adjust during render rather than in an effect, which would cost an extra
-  // render pass every time the deep link or the floor list changes.
   const [syncedRequest, setSyncedRequest] = useState(requestedNodeId)
 
   if (syncedRequest !== requestedNodeId) {
@@ -122,13 +118,24 @@ export default function MapScreen() {
       style={[styles.root, { backgroundColor: theme.background }]}
       edges={['top']}
     >
-      <View style={styles.header}>
-        <View style={styles.headerText}>
+      <View style={styles.overlay}>
+        <View style={styles.header}>
           <Text style={[typography.title, { color: theme.text }]}>Campus map</Text>
           <Text style={[typography.caption, { color: theme.textMuted }]}>
             {getLocationCountLabel(nodes.length)} · Floor {floor}
           </Text>
         </View>
+
+        <FloorSelector
+          floors={floors}
+          counts={floorCounts}
+          selected={floor}
+          onSelect={(next) => {
+            haptics.selection()
+            setFloor(next)
+            setSelectedNode(null)
+          }}
+        />
 
         <Pressable
           accessibilityRole="button"
@@ -138,27 +145,16 @@ export default function MapScreen() {
             mapRef.current?.reset()
           }}
           style={({ pressed }) => [
-            styles.iconButton,
+            styles.resetButton,
             {
               backgroundColor: pressed ? theme.surfaceMuted : theme.surface,
               borderColor: theme.border,
             },
           ]}
         >
-          <RotateCcw size={17} color={theme.text} />
+          <RotateCcw size={16} color={theme.text} />
         </Pressable>
       </View>
-
-      <FloorSelector
-        floors={floors}
-        counts={floorCounts}
-        selected={floor}
-        onSelect={(next) => {
-          haptics.selection()
-          setFloor(next)
-          setSelectedNode(null)
-        }}
-      />
 
       <View style={styles.mapArea}>
         <CampusMap
@@ -173,63 +169,68 @@ export default function MapScreen() {
         />
       </View>
 
-      <View style={styles.sheet}>
+      <View style={styles.sheetContainer}>
         {selectedNode ? (
-          <Card>
-            <View style={styles.sheetHeader}>
-              <View style={styles.sheetText}>
-                <Text style={[typography.heading, { color: theme.text }]} numberOfLines={1}>
-                  {selectedNode.name}
-                </Text>
-                <Text style={[typography.caption, { color: theme.textMuted }]}>
-                  {getFloorLabel(selectedNode.floor)} · {selectedNode.nodeId}
-                </Text>
+          <Card padded={false} style={styles.sheetCard}>
+            <View style={styles.sheetContent}>
+              <View style={styles.sheetHeader}>
+                <View style={styles.sheetText}>
+                  <Text style={[typography.heading, { color: theme.text }]} numberOfLines={1}>
+                    {selectedNode.name}
+                  </Text>
+                  <Text style={[typography.caption, { color: theme.textMuted }]}>
+                    {getFloorLabel(selectedNode.floor)} · {selectedNode.nodeId}
+                  </Text>
+                </View>
+
+                {selectedNode.nodeId === positionNodeId ? (
+                  <Badge label="You are here" tone="accent" />
+                ) : null}
               </View>
 
-              {selectedNode.nodeId === positionNodeId ? (
-                <Badge label="You are here" tone="accent" />
-              ) : null}
-            </View>
-
-            <View style={styles.sheetActions}>
-              <Button
-                label="I'm here"
-                icon={Crosshair}
-                variant={positionNodeId === selectedNode.nodeId ? 'ghost' : 'primary'}
-                size="sm"
-                onPress={setAsMyLocation}
-                style={styles.flexAction}
-              />
-              <Button
-                label="Go here"
-                icon={Navigation}
-                variant="secondary"
-                size="sm"
-                onPress={() =>
-                  router.push(`/navigate?to=${selectedNode.nodeId}`)
-                }
-                style={styles.flexAction}
-              />
+              <View style={styles.sheetActions}>
+                <Button
+                  label="I'm here"
+                  icon={Crosshair}
+                  variant={positionNodeId === selectedNode.nodeId ? 'ghost' : 'primary'}
+                  size="sm"
+                  onPress={setAsMyLocation}
+                  style={styles.flexAction}
+                />
+                <Button
+                  label="Go here"
+                  icon={Navigation}
+                  variant="secondary"
+                  size="sm"
+                  onPress={() =>
+                    router.push(`/navigate?to=${selectedNode.nodeId}`)
+                  }
+                  style={styles.flexAction}
+                />
+              </View>
             </View>
           </Card>
         ) : (
-          <Card>
-            <View style={styles.hintRow}>
-              <MapPin size={18} color={theme.textSubtle} />
-              <Text style={[typography.body, styles.hint, { color: theme.textMuted }]}>
-                {positionNodeId
-                  ? 'Tap a room to set it as your location or plan a route to it. Pinch to zoom, drag to pan.'
-                  : 'Tap a room on the map to select it. Pinch to zoom, drag to pan.'}
-              </Text>
-            </View>
+          <Card padded={false} style={styles.sheetCard}>
+            <View style={styles.sheetContent}>
+              <View style={styles.hintRow}>
+                <MapPin size={16} color={theme.textSubtle} />
+                <Text style={[typography.body, styles.hint, { color: theme.textMuted }]}>
+                  {positionNodeId
+                    ? 'Tap a room to set it as your location or plan a route. Pinch to zoom, drag to pan.'
+                    : 'Tap a room on the map to select it. Pinch to zoom, drag to pan.'}
+                </Text>
+              </View>
 
-            <Button
-              label="Search for a room"
-              icon={Search}
-              variant="ghost"
-              size="sm"
-              onPress={() => router.push('/search?purpose=browse')}
-            />
+              <Button
+                label="Search for a room"
+                icon={Search}
+                variant="ghost"
+                size="sm"
+                onPress={() => router.push('/search?purpose=browse')}
+                style={styles.searchButton}
+              />
+            </View>
           </Card>
         )}
       </View>
@@ -245,37 +246,51 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
   },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg,
+  overlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
     paddingTop: spacing.sm,
-    gap: spacing.md,
+    paddingHorizontal: spacing.lg,
+    zIndex: 20,
   },
-  headerText: {
-    flex: 1,
+  header: {
+    flexDirection: 'column',
     gap: 2,
+    marginBottom: spacing.xs,
   },
-  iconButton: {
-    width: 38,
-    height: 38,
+  resetButton: {
+    position: 'absolute',
+    top: spacing.sm,
+    right: spacing.lg,
+    width: 36,
+    height: 36,
     borderRadius: radius.md,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: StyleSheet.hairlineWidth * 2,
+    zIndex: 25,
   },
   mapArea: {
     flex: 1,
+  },
+  sheetContainer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    zIndex: 15,
+  },
+  sheetCard: {
     marginHorizontal: spacing.lg,
-    marginTop: spacing.sm,
-    borderRadius: radius.lg,
+    marginBottom: spacing.lg,
+    borderRadius: radius.xl,
     overflow: 'hidden',
     borderWidth: StyleSheet.hairlineWidth * 2,
-    borderColor: 'transparent',
   },
-  sheet: {
-    padding: spacing.lg,
+  sheetContent: {
+    padding: spacing.md,
   },
   sheetHeader: {
     flexDirection: 'row',
@@ -299,10 +314,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: spacing.sm,
-    marginBottom: spacing.sm,
+    marginBottom: spacing.md,
   },
   hint: {
     flex: 1,
     lineHeight: 20,
+  },
+  searchButton: {
+    alignSelf: 'stretch',
   },
 })

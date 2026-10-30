@@ -153,6 +153,7 @@ export function BackendSettingsCard({ showAddress = false }) {
           keyboardType="url"
           autoCapitalize="none"
           autoComplete="off"
+          error={saveError}
           hint={`Currently using the ${
             source === 'override'
               ? 'saved address'

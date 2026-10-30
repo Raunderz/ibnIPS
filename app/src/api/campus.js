@@ -3,6 +3,42 @@ import { API_ENDPOINTS } from './endpoints.js'
 import { sortNodes } from '../map/mapGraph.js'
 import { parseMapResponse, parseNodeList } from '../map/mapContract.js'
 
+/**
+ * Spreads clustered backend coordinates across a consistent canvas while
+ * preserving relative positions and directions. Backend data is untouched.
+ */
+function normalizeNodeCoordinates(nodes) {
+  if (nodes.length === 0) return nodes
+
+  let minX = Infinity
+  let maxX = -Infinity
+  let minY = Infinity
+  let maxY = -Infinity
+
+  for (const node of nodes) {
+    minX = Math.min(minX, node.x)
+    maxX = Math.max(maxX, node.x)
+    minY = Math.min(minY, node.y)
+    maxY = Math.max(maxY, node.y)
+  }
+
+  const rangeX = maxX - minX || 1
+  const rangeY = maxY - minY || 1
+
+  // Scale up so nodes are well-spaced, preserving aspect ratio.
+  const targetSize = 1000
+  const padding = 80
+  const scaleX = (targetSize - 2 * padding) / rangeX
+  const scaleY = (targetSize - 2 * padding) / rangeY
+  const scale = Math.min(scaleX, scaleY)
+
+  return nodes.map((node) => ({
+    ...node,
+    x: Math.round((node.x - minX) * scale + padding),
+    y: Math.round((node.y - minY) * scale + padding),
+  }))
+}
+
 export async function getBackendHealth(signal) {
   const payload = await apiRequest(API_ENDPOINTS.health, { signal })
 
@@ -64,10 +100,17 @@ export async function getCampusCatalog(signal) {
     }
   }
 
+  // The backend hands us coordinates that are clustered too close together
+  // (often single-digit deltas), which makes the map look congested and
+  // zoomed in on a single node. Re-normalise on the client so the graph is
+  // spread across a consistent canvas while preserving relative positions
+  // and directions. Backend data is never modified.
+  const normalizedNodes = normalizeNodeCoordinates([...nodesById.values()])
+
   const fingerprints = map ? map.fingerprints : {}
 
   return {
-    nodes: sortNodes([...nodesById.values()]),
+    nodes: sortNodes(normalizedNodes),
     edges: map ? map.edges : [],
     fingerprints,
     fingerprintCounts: countFingerprints(fingerprints),

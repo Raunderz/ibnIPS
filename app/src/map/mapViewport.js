@@ -1,6 +1,6 @@
 export const MIN_SCALE = 0.4
 export const MAX_SCALE = 6
-export const MAP_CROP_RATIO = 0.45
+export const MAP_CROP_RATIO = 0.6
 export const IDENTITY = { x: 0, y: 0, scale: 1 }
 
 export function clampScale(scale) {

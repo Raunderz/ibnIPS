@@ -33,7 +33,7 @@ class ServerConfig(context: Context) {
     }
 
     companion object {
-        const val DEFAULT_BASE_URL = "http://10.0.2.2:3000/"
+        const val DEFAULT_BASE_URL = "https://ibnips.onrender.com/"
         private const val KEY_BASE_URL = "base_url"
     }
 }

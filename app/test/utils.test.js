@@ -108,11 +108,12 @@ test('an unusable address is rejected', () => {
   assert.equal(normalizeBaseUrl(42), null)
 })
 
-test('a KIIT email must be lowercase and on the right domain', () => {
+test('a KIIT email is accepted in any case and must be on the right domain', () => {
   assert.equal(getEmailError('23b1234@kiit.ac.in'), null)
   assert.equal(getEmailError('  23b1234@kiit.ac.in  '), null)
+  assert.equal(getEmailError('23B1234@kiit.ac.in'), null)
+  assert.equal(getEmailError('23B1234@KIIT.AC.IN'), null)
   assert.ok(getEmailError(''))
-  assert.ok(getEmailError('23B1234@kiit.ac.in'))
   assert.ok(getEmailError('someone@gmail.com'))
   assert.ok(getEmailError('23b1234@kiit.com'))
 })

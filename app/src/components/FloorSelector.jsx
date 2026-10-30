@@ -2,7 +2,7 @@ import { Pressable, ScrollView, StyleSheet, Text } from 'react-native'
 import { radius, spacing, typography, useTheme } from '../theme/index.js'
 import { haptics } from '../utils/haptics.js'
 
-export function FloorSelector({ floors, counts, selected, onSelect }) {
+export function FloorSelector({ floors, selected, onSelect }) {
   const theme = useTheme()
 
   if (floors.length <= 1) {
@@ -45,18 +45,7 @@ export function FloorSelector({ floors, counts, selected, onSelect }) {
                 { color: isSelected ? theme.onPrimary : theme.textMuted },
               ]}
             >
-              Floor {floor}
-            </Text>
-            <Text
-              style={[
-                typography.micro,
-                {
-                  color: isSelected ? theme.onPrimary : theme.textSubtle,
-                  opacity: isSelected ? 0.85 : 1,
-                },
-              ]}
-            >
-              {counts.get(floor) ?? 0}
+              F{floor}
             </Text>
           </Pressable>
         )
@@ -67,17 +56,17 @@ export function FloorSelector({ floors, counts, selected, onSelect }) {
 
 const styles = StyleSheet.create({
   content: {
-    gap: spacing.sm,
+    gap: spacing.xs,
     paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm,
+    paddingVertical: spacing.xs,
   },
   pill: {
-    flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.xs + 2,
-    paddingHorizontal: spacing.md + 2,
-    paddingVertical: spacing.sm,
+    justifyContent: 'center',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs + 2,
     borderRadius: radius.pill,
     borderWidth: StyleSheet.hairlineWidth * 2,
+    minWidth: 34,
   },
 })

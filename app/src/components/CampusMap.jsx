@@ -5,7 +5,7 @@ import Animated, {
   runOnJS,
   useAnimatedStyle,
   useSharedValue,
-  withTiming,
+  withSpring,
 } from 'react-native-reanimated'
 import Svg, { Circle, G, Line, Path, Text as SvgText } from 'react-native-svg'
 import { getFitView, MAP_CROP_RATIO, MAX_SCALE, MIN_SCALE } from '../map/mapViewport.js'
@@ -14,8 +14,8 @@ import { haptics } from '../utils/haptics.js'
 
 const AnimatedView = Animated.createAnimatedComponent(View)
 
-const HIT_RADIUS_RATIO = 0.028
-const LABEL_HEIGHT_RATIO = 0.032
+const HIT_RADIUS_RATIO = 0.03
+const LABEL_HEIGHT_RATIO = 0.022
 
 function clampScaleValue(value) {
   return Math.min(Math.max(value, MIN_SCALE), MAX_SCALE)
@@ -27,11 +27,10 @@ const clampScaleWorklet = (value) => {
 }
 
 /**
- * Renders one floor of the campus graph.
+ * Google Maps-inspired campus map.
  *
- * The SVG uses a `viewBox` fitted to the floor's bounds, so the map always
- * fills the available space regardless of the coordinate range the backend
- * reports. Pinch and pan are layered on top as a transform.
+ * The SVG fills the available space. Room labels from the backend are always
+ * rendered on the map so users can see room numbers without tapping.
  */
 export const CampusMap = forwardRef(function CampusMap(
   {
@@ -60,19 +59,19 @@ export const CampusMap = forwardRef(function CampusMap(
   const aspect = size.width > 0 && size.height > 0 ? size.width / size.height : 1
 
   const view = useMemo(
-    () => getFitView(nodes, aspect, 90, MAP_CROP_RATIO),
+    () => getFitView(nodes, aspect, 120, MAP_CROP_RATIO),
     [nodes, aspect],
   )
 
-  const nodeRadius = Math.max(view.width, view.height) * 0.014
+  const nodeRadius = Math.max(view.width, view.height) * 0.013
   const hitRadius = Math.max(view.width, view.height) * HIT_RADIUS_RATIO
   const fontSize = Math.max(view.width, view.height) * LABEL_HEIGHT_RATIO
 
   const resetTransform = useCallback(() => {
-    scale.value = withTiming(1, { duration: 220 })
+    scale.value = withSpring(1, { damping: 18, stiffness: 120 })
     savedScale.value = 1
-    translateX.value = withTiming(0, { duration: 220 })
-    translateY.value = withTiming(0, { duration: 220 })
+    translateX.value = withSpring(0, { damping: 18, stiffness: 120 })
+    translateY.value = withSpring(0, { damping: 18, stiffness: 120 })
     savedTranslateX.value = 0
     savedTranslateY.value = 0
   }, [savedScale, savedTranslateY, savedTranslateX, scale, translateX, translateY])
@@ -87,10 +86,10 @@ export const CampusMap = forwardRef(function CampusMap(
       const centerX = view.minX + view.width / 2
       const centerY = view.minY + view.height / 2
 
-      scale.value = withTiming(target, { duration: 260 })
+      scale.value = withSpring(target, { damping: 18, stiffness: 120 })
       savedScale.value = target
-      translateX.value = withTiming(centerX - target * x, { duration: 260 })
-      translateY.value = withTiming(centerY - target * y, { duration: 260 })
+      translateX.value = withSpring(centerX - target * x, { damping: 18, stiffness: 120 })
+      translateY.value = withSpring(centerY - target * y, { damping: 18, stiffness: 120 })
       savedTranslateX.value = centerX - target * x
       savedTranslateY.value = centerY - target * y
     },
@@ -142,9 +141,7 @@ export const CampusMap = forwardRef(function CampusMap(
       Gesture.Tap()
         .numberOfTaps(2)
         .onEnd(() => {
-          scale.value = withTiming(clampScaleWorklet(savedScale.value * 1.8), {
-            duration: 200,
-          })
+          scale.value = withSpring(clampScaleWorklet(savedScale.value * 1.8), { damping: 18, stiffness: 120 })
           savedScale.value = clampScaleWorklet(savedScale.value * 1.8)
         }),
     [savedScale, scale],
@@ -190,8 +187,6 @@ export const CampusMap = forwardRef(function CampusMap(
         .filter((entry) => entry.from && entry.to),
     [edges, nodesById],
   )
-
-  const showLabels = nodes.length <= 40
 
   return (
     <View
@@ -267,19 +262,19 @@ export const CampusMap = forwardRef(function CampusMap(
                       <Circle
                         cx={node.x}
                         cy={node.y}
-                        r={nodeRadius * 2.8}
+                        r={nodeRadius * 3.2}
                         fill={theme.accent}
-                        opacity={0.18}
+                        opacity={0.16}
                       />
                     ) : null}
 
                     <Circle
                       cx={node.x}
                       cy={node.y}
-                      r={nodeRadius * (isSource || isDestination || isPosition ? 1.5 : 1)}
+                      r={nodeRadius * (isSource || isDestination || isPosition ? 1.7 : 1)}
                       fill={fill}
                       stroke={isSelected ? theme.text : theme.mapNodeBorder}
-                      strokeWidth={nodeRadius * (isSelected ? 0.6 : 0.35)}
+                      strokeWidth={nodeRadius * (isSelected ? 0.7 : 0.4)}
                     />
 
                     <Circle
@@ -290,18 +285,18 @@ export const CampusMap = forwardRef(function CampusMap(
                       onPress={() => runOnJS(handleSelect)(node)}
                     />
 
-                    {showLabels ? (
-                      <SvgText
-                        x={node.x}
-                        y={node.y - nodeRadius * 2.1}
-                        fontSize={fontSize}
-                        fill={theme.mapLabel}
-                        textAnchor="middle"
-                        fontWeight="600"
-                      >
-                        {node.name}
-                      </SvgText>
-                    ) : null}
+                    {/* Room label from backend - always visible like Google Maps */}
+                    <SvgText
+                      x={node.x}
+                      y={node.y - nodeRadius * 2.6}
+                      fontSize={fontSize}
+                      fill={theme.mapLabel}
+                      textAnchor="middle"
+                      fontWeight="600"
+                      opacity={isPosition || isSelected ? 1 : 0.9}
+                    >
+                      {node.name}
+                    </SvgText>
                   </G>
                 )
               })}
