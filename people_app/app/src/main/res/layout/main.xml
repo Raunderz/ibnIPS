@@ -1,0 +1,227 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/window_bg">
+
+    <!-- Full-screen map canvas -->
+    <com.example.ibnips.people.MapView
+        android:id="@+id/mapView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <!-- Map controls panel (shown on Map tab) -->
+    <LinearLayout
+        android:id="@+id/panelMap"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:background="@drawable/panel_bottom"
+        android:elevation="8dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:padding="12dp"
+        android:visibility="visible">
+
+        <Button
+            android:id="@+id/btnLocate"
+            android:layout_width="wrap_content"
+            android:layout_height="40dp"
+            android:layout_marginEnd="8dp"
+            android:background="@drawable/btn_locate_bg"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:text="@string/btn_locate"
+            android:textColor="#FFFFFF"
+            android:textSize="14sp"
+            android:textAllCaps="false" />
+
+        <TextView
+            android:id="@+id/statusText"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="8dp"
+            android:text="Status: —"
+            android:textColor="#212121"
+            android:textSize="13sp"
+            android:maxLines="2"
+            android:ellipsize="end" />
+
+    </LinearLayout>
+
+    <!-- Reviews panel (shown on Reviews tab) -->
+    <LinearLayout
+        android:id="@+id/panelReviews"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_gravity="bottom"
+        android:background="@color/surface"
+        android:elevation="8dp"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:background="@color/primary"
+            android:gravity="center_vertical"
+            android:paddingStart="16dp"
+            android:text="@string/tab_reviews"
+            android:textColor="#FFFFFF"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <ScrollView
+            android:id="@+id/reviewsScroll"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1">
+
+            <LinearLayout
+                android:id="@+id/reviewsList"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="8dp" />
+        </ScrollView>
+    </LinearLayout>
+
+    <!-- Route panel (shown on Route tab) -->
+    <LinearLayout
+        android:id="@+id/panelRoute"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_gravity="bottom"
+        android:background="@color/surface"
+        android:elevation="8dp"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:background="@color/primary"
+            android:gravity="center_vertical"
+            android:paddingStart="16dp"
+            android:text="@string/tab_route"
+            android:textColor="#FFFFFF"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="12dp">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/hint_from"
+                android:textColor="#757575"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+
+            <Spinner
+                android:id="@+id/spinnerFrom"
+                android:layout_width="match_parent"
+                android:layout_height="44dp"
+                android:layout_marginBottom="8dp"
+                android:background="@drawable/spinner_bg"
+                android:padding="8dp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/hint_to"
+                android:textColor="#757575"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+
+            <Spinner
+                android:id="@+id/spinnerTo"
+                android:layout_width="match_parent"
+                android:layout_height="44dp"
+                android:layout_marginBottom="8dp"
+                android:background="@drawable/spinner_bg"
+                android:padding="8dp" />
+
+            <Button
+                android:id="@+id/btnRoute"
+                android:layout_width="match_parent"
+                android:layout_height="44dp"
+                android:layout_marginBottom="8dp"
+                android:background="@drawable/btn_route_bg"
+                android:text="@string/btn_route"
+                android:textColor="#FFFFFF"
+                android:textSize="15sp"
+                android:textAllCaps="false" />
+
+            <TextView
+                android:id="@+id/routeSummary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="—"
+                android:textColor="#212121"
+                android:textSize="13sp"
+                android:padding="8dp"
+                android:background="@drawable/panel_route_card" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- Bottom nav bar -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:layout_gravity="bottom"
+        android:background="@drawable/nav_bg"
+        android:elevation="6dp"
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/navMap"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:background="@drawable/nav_item_bg"
+            android:text="@string/tab_map"
+            android:textColor="@color/nav_text"
+            android:textSize="13sp"
+            android:textAllCaps="false" />
+
+        <View
+            android:layout_width="1dp"
+            android:layout_height="match_parent"
+            android:background="#E0E0E0" />
+
+        <Button
+            android:id="@+id/navReviews"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="match_parent"
+            android:background="@drawable/nav_item_bg"
+            android:text="@string/tab_reviews"
+            android:textColor="@color/nav_text"
+            android:textSize="13sp"
+            android:textAllCaps="false" />
+
+        <View
+            android:layout_width="1dp"
+            android:layout_height="match_parent"
+            android:background="#E0E0E0" />
+
+        <Button
+            android:id="@+id/navRoute"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="match_parent"
+            android:background="@drawable/nav_item_bg"
+            android:text="@string/tab_route"
+            android:textColor="@color/nav_text"
+            android:textSize="13sp"
+            android:textAllCaps="false" />
+
+    </LinearLayout>
+
+</FrameLayout>

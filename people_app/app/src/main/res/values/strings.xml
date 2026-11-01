@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">ibnIPS People</string>
+    <string name="tab_map">Map</string>
+    <string name="tab_reviews">Reviews</string>
+    <string name="tab_route">Route</string>
+    <string name="status_fetching">Fetching map…</string>
+    <string name="status_ready">Ready</string>
+    <string name="status_empty">No data yet</string>
+    <string name="btn_locate">Locate me</string>
+    <string name="btn_route">Show route</string>
+    <string name="hint_from">From</string>
+    <string name="hint_to">To</string>
+    <string name="error_load">Could not load</string>
+</resources>
