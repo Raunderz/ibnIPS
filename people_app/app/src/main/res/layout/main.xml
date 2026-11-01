@@ -4,73 +4,428 @@
     android:layout_height="match_parent"
     android:background="@color/window_bg">
 
-    <!-- Full-screen map canvas -->
+    <!-- 1. Full-Screen Google Maps Indoor Canvas -->
     <com.example.ibnips.people.MapView
         android:id="@+id/mapView"
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
-    <!-- Map controls panel (shown on Map tab) -->
+    <!-- 2. Floating Top Search Card (Google Maps Style) -->
     <LinearLayout
-        android:id="@+id/panelMap"
+        android:id="@+id/topSearchCard"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_gravity="bottom"
-        android:background="@drawable/panel_bottom"
-        android:elevation="8dp"
+        android:layout_height="50dp"
+        android:layout_gravity="top"
+        android:layout_marginStart="16dp"
+        android:layout_marginEnd="16dp"
+        android:layout_marginTop="16dp"
+        android:background="@drawable/bg_floating_card"
+        android:elevation="6dp"
         android:gravity="center_vertical"
         android:orientation="horizontal"
-        android:padding="12dp"
-        android:visibility="visible">
-
-        <Button
-            android:id="@+id/btnLocate"
-            android:layout_width="wrap_content"
-            android:layout_height="40dp"
-            android:layout_marginEnd="8dp"
-            android:background="@drawable/btn_locate_bg"
-            android:paddingStart="16dp"
-            android:paddingEnd="16dp"
-            android:text="@string/btn_locate"
-            android:textColor="#FFFFFF"
-            android:textSize="14sp"
-            android:textAllCaps="false" />
+        android:paddingStart="16dp"
+        android:paddingEnd="12dp">
 
         <TextView
-            android:id="@+id/statusText"
-            android:layout_width="0dp"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:text="🔍"
+            android:textSize="16sp" />
+
+        <AutoCompleteTextView
+            android:id="@+id/searchRooms"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
             android:layout_weight="1"
-            android:layout_marginStart="8dp"
-            android:text="Status: —"
-            android:textColor="#212121"
-            android:textSize="13sp"
-            android:maxLines="2"
-            android:ellipsize="end" />
+            android:layout_marginStart="12dp"
+            android:background="@null"
+            android:hint="Search rooms or places…"
+            android:imeOptions="actionSearch"
+            android:singleLine="true"
+            android:textColor="#202124"
+            android:textColorHint="#80868B"
+            android:textSize="15sp" />
+
+        <Button
+            android:id="@+id/btnClearSearch"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:background="@null"
+            android:text="✕"
+            android:textColor="#80868B"
+            android:textSize="14sp"
+            android:visibility="gone" />
 
     </LinearLayout>
 
-    <!-- Reviews panel (shown on Reviews tab) -->
+    <!-- 3. Floating Floor Switcher (Vertical pill on top-right, Google Maps indoor style) -->
+    <LinearLayout
+        android:id="@+id/floorSwitcher"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|end"
+        android:layout_marginTop="78dp"
+        android:layout_marginEnd="16dp"
+        android:background="@drawable/bg_floor_pill"
+        android:elevation="6dp"
+        android:orientation="vertical"
+        android:paddingTop="4dp"
+        android:paddingBottom="4dp"
+        android:visibility="gone" />
+
+    <!-- 4. Floating Action Buttons (Locate Me & Directions) on Map -->
+    <LinearLayout
+        android:id="@+id/floatingFabGroup"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|end"
+        android:layout_marginEnd="16dp"
+        android:layout_marginBottom="72dp"
+        android:gravity="center_horizontal"
+        android:orientation="vertical">
+
+        <!-- Locate Me FAB -->
+        <FrameLayout
+            android:id="@+id/fabLocate"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_marginBottom="12dp"
+            android:background="@drawable/bg_fab"
+            android:elevation="6dp">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:gravity="center"
+                android:text="🎯"
+                android:textSize="20sp" />
+        </FrameLayout>
+
+        <!-- Directions / Route FAB -->
+        <FrameLayout
+            android:id="@+id/fabDirections"
+            android:layout_width="52dp"
+            android:layout_height="52dp"
+            android:background="@drawable/bg_fab_blue"
+            android:elevation="6dp">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:gravity="center"
+                android:text="↗"
+                android:textColor="#FFFFFF"
+                android:textSize="26sp"
+                android:textStyle="bold" />
+        </FrameLayout>
+
+    </LinearLayout>
+
+    <!-- 5. Floating Status Pill (top-center, subtle info) -->
+    <TextView
+        android:id="@+id/statusText"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|center_horizontal"
+        android:layout_marginTop="74dp"
+        android:background="@drawable/bg_chip"
+        android:elevation="4dp"
+        android:paddingStart="14dp"
+        android:paddingEnd="14dp"
+        android:paddingTop="4dp"
+        android:paddingBottom="4dp"
+        android:text="Ready"
+        android:textColor="@color/google_blue"
+        android:textSize="12sp"
+        android:visibility="gone" />
+
+    <!-- 6. Room Detail Card (Google Maps POI Bottom Sheet) -->
+    <LinearLayout
+        android:id="@+id/panelRoomDetail"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:layout_marginBottom="56dp"
+        android:background="@drawable/bg_bottom_sheet"
+        android:elevation="12dp"
+        android:orientation="vertical"
+        android:padding="16dp"
+        android:visibility="gone">
+
+        <View
+            android:layout_width="36dp"
+            android:layout_height="4dp"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginBottom="12dp"
+            android:background="@drawable/bg_drag_handle" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    android:id="@+id/roomDetailTitle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Room Title"
+                    android:textColor="#202124"
+                    android:textSize="20sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/roomDetailSubtitle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:text="Floor 1 • Indoor Node"
+                    android:textColor="#5F6368"
+                    android:textSize="13sp" />
+            </LinearLayout>
+
+            <Button
+                android:id="@+id/btnCloseRoomDetail"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:background="@drawable/bg_fab"
+                android:text="✕"
+                android:textColor="#5F6368"
+                android:textSize="13sp" />
+        </LinearLayout>
+
+        <!-- Action Pills: Directions, Start Here, Reviews -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/btnRoomDirections"
+                android:layout_width="0dp"
+                android:layout_height="40dp"
+                android:layout_weight="1"
+                android:layout_marginEnd="6dp"
+                android:background="@drawable/bg_pill_button"
+                android:text="Directions"
+                android:textColor="#FFFFFF"
+                android:textSize="13sp"
+                android:textStyle="bold"
+                android:textAllCaps="false" />
+
+            <Button
+                android:id="@+id/btnRoomFromHere"
+                android:layout_width="0dp"
+                android:layout_height="40dp"
+                android:layout_weight="1"
+                android:layout_marginStart="3dp"
+                android:layout_marginEnd="3dp"
+                android:background="@drawable/bg_pill_button_outlined"
+                android:text="Start here"
+                android:textColor="#1A73E8"
+                android:textSize="13sp"
+                android:textAllCaps="false" />
+
+            <Button
+                android:id="@+id/btnRoomReviews"
+                android:layout_width="0dp"
+                android:layout_height="40dp"
+                android:layout_weight="1"
+                android:layout_marginStart="6dp"
+                android:background="@drawable/bg_pill_button_outlined"
+                android:text="Reviews"
+                android:textColor="#5F6368"
+                android:textSize="13sp"
+                android:textAllCaps="false" />
+        </LinearLayout>
+
+    </LinearLayout>
+
+    <!-- 7. Route Directions Header Panel (Google Maps Directions Top Card) -->
+    <LinearLayout
+        android:id="@+id/panelRouteDirections"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top"
+        android:layout_marginStart="16dp"
+        android:layout_marginEnd="16dp"
+        android:layout_marginTop="16dp"
+        android:background="@drawable/bg_floating_card"
+        android:elevation="8dp"
+        android:orientation="vertical"
+        android:padding="14dp"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <LinearLayout
+                android:layout_width="24dp"
+                android:layout_height="wrap_content"
+                android:gravity="center_horizontal"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="🟢"
+                    android:textSize="11sp" />
+
+                <View
+                    android:layout_width="1.5dp"
+                    android:layout_height="16dp"
+                    android:layout_marginTop="2dp"
+                    android:layout_marginBottom="2dp"
+                    android:background="#BDC1C6" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="🔴"
+                    android:textSize="11sp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="8dp"
+                android:orientation="vertical">
+
+                <Spinner
+                    android:id="@+id/spinnerFrom"
+                    android:layout_width="match_parent"
+                    android:layout_height="36dp"
+                    android:background="@drawable/spinner_bg"
+                    android:paddingStart="8dp"
+                    android:paddingEnd="8dp" />
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="6dp" />
+
+                <Spinner
+                    android:id="@+id/spinnerTo"
+                    android:layout_width="match_parent"
+                    android:layout_height="36dp"
+                    android:background="@drawable/spinner_bg"
+                    android:paddingStart="8dp"
+                    android:paddingEnd="8dp" />
+            </LinearLayout>
+
+            <Button
+                android:id="@+id/btnSwapRoute"
+                android:layout_width="38dp"
+                android:layout_height="38dp"
+                android:layout_marginStart="8dp"
+                android:background="@drawable/bg_fab"
+                android:text="⇅"
+                android:textColor="#1A73E8"
+                android:textSize="18sp" />
+
+            <Button
+                android:id="@+id/btnCloseRouteHeader"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:layout_marginStart="6dp"
+                android:background="@null"
+                android:text="✕"
+                android:textColor="#5F6368"
+                android:textSize="16sp" />
+
+        </LinearLayout>
+
+        <!-- Route action / step-by-step summary bar -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/routeSummary"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Select rooms to view route"
+                android:textColor="#202124"
+                android:textSize="13sp" />
+
+            <Button
+                android:id="@+id/btnViewSteps"
+                android:layout_width="wrap_content"
+                android:layout_height="32dp"
+                android:background="@drawable/bg_pill_button"
+                android:paddingStart="12dp"
+                android:paddingEnd="12dp"
+                android:text="Steps"
+                android:textColor="#FFFFFF"
+                android:textSize="12sp"
+                android:textAllCaps="false" />
+        </LinearLayout>
+
+    </LinearLayout>
+
+    <!-- 8. Full Reviews Panel (When user switches to Reviews tab) -->
     <LinearLayout
         android:id="@+id/panelReviews"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:layout_gravity="bottom"
-        android:background="@color/surface"
-        android:elevation="8dp"
+        android:layout_marginBottom="56dp"
+        android:background="#FFFFFF"
+        android:elevation="10dp"
         android:orientation="vertical"
         android:visibility="gone">
 
-        <TextView
+        <!-- Top Header Bar -->
+        <LinearLayout
             android:layout_width="match_parent"
-            android:layout_height="48dp"
-            android:background="@color/primary"
+            android:layout_height="56dp"
             android:gravity="center_vertical"
-            android:paddingStart="16dp"
-            android:text="@string/tab_reviews"
-            android:textColor="#FFFFFF"
-            android:textSize="16sp"
-            android:textStyle="bold" />
+            android:orientation="horizontal"
+            android:paddingStart="20dp"
+            android:paddingEnd="20dp"
+            android:background="#FFFFFF">
+
+            <TextView
+                android:id="@+id/reviewsHeaderTitle"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Ratings &amp; Reviews"
+                android:textColor="#202124"
+                android:textSize="18sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/reviewsCountBadge"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:background="@drawable/bg_chip"
+                android:paddingStart="10dp"
+                android:paddingEnd="10dp"
+                android:paddingTop="4dp"
+                android:paddingBottom="4dp"
+                android:text="0 reviews"
+                android:textColor="@color/google_blue"
+                android:textSize="12sp" />
+        </LinearLayout>
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="#DADCE0" />
 
         <ScrollView
             android:id="@+id/reviewsScroll"
@@ -82,145 +437,95 @@
                 android:id="@+id/reviewsList"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:padding="8dp" />
+                android:orientation="vertical" />
         </ScrollView>
     </LinearLayout>
 
-    <!-- Route panel (shown on Route tab) -->
+    <!-- 9. Google Maps Bottom Navigation Bar -->
     <LinearLayout
-        android:id="@+id/panelRoute"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:layout_gravity="bottom"
-        android:background="@color/surface"
-        android:elevation="8dp"
-        android:orientation="vertical"
-        android:visibility="gone">
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="48dp"
-            android:background="@color/primary"
-            android:gravity="center_vertical"
-            android:paddingStart="16dp"
-            android:text="@string/tab_route"
-            android:textColor="#FFFFFF"
-            android:textSize="16sp"
-            android:textStyle="bold" />
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:padding="12dp">
-
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/hint_from"
-                android:textColor="#757575"
-                android:textSize="12sp"
-                android:textStyle="bold" />
-
-            <Spinner
-                android:id="@+id/spinnerFrom"
-                android:layout_width="match_parent"
-                android:layout_height="44dp"
-                android:layout_marginBottom="8dp"
-                android:background="@drawable/spinner_bg"
-                android:padding="8dp" />
-
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/hint_to"
-                android:textColor="#757575"
-                android:textSize="12sp"
-                android:textStyle="bold" />
-
-            <Spinner
-                android:id="@+id/spinnerTo"
-                android:layout_width="match_parent"
-                android:layout_height="44dp"
-                android:layout_marginBottom="8dp"
-                android:background="@drawable/spinner_bg"
-                android:padding="8dp" />
-
-            <Button
-                android:id="@+id/btnRoute"
-                android:layout_width="match_parent"
-                android:layout_height="44dp"
-                android:layout_marginBottom="8dp"
-                android:background="@drawable/btn_route_bg"
-                android:text="@string/btn_route"
-                android:textColor="#FFFFFF"
-                android:textSize="15sp"
-                android:textAllCaps="false" />
-
-            <TextView
-                android:id="@+id/routeSummary"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="—"
-                android:textColor="#212121"
-                android:textSize="13sp"
-                android:padding="8dp"
-                android:background="@drawable/panel_route_card" />
-        </LinearLayout>
-    </LinearLayout>
-
-    <!-- Bottom nav bar -->
-    <LinearLayout
+        android:id="@+id/bottomNavBar"
         android:layout_width="match_parent"
         android:layout_height="56dp"
         android:layout_gravity="bottom"
-        android:background="@drawable/nav_bg"
-        android:elevation="6dp"
+        android:background="#FFFFFF"
+        android:elevation="16dp"
         android:orientation="horizontal">
 
-        <Button
-            android:id="@+id/navMap"
+        <LinearLayout
+            android:id="@+id/tabMapLayout"
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_weight="1"
-            android:background="@drawable/nav_item_bg"
-            android:text="@string/tab_map"
-            android:textColor="@color/nav_text"
-            android:textSize="13sp"
-            android:textAllCaps="false" />
+            android:gravity="center"
+            android:orientation="vertical"
+            android:background="?android:attr/selectableItemBackground">
 
-        <View
-            android:layout_width="1dp"
-            android:layout_height="match_parent"
-            android:background="#E0E0E0" />
+            <TextView
+                android:id="@+id/tabMapIcon"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="🗺️"
+                android:textSize="18sp" />
 
-        <Button
-            android:id="@+id/navReviews"
+            <TextView
+                android:id="@+id/tabMapText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Explore"
+                android:textColor="@color/google_blue"
+                android:textSize="11sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/tabRouteLayout"
             android:layout_width="0dp"
+            android:layout_height="match_parent"
             android:layout_weight="1"
-            android:layout_height="match_parent"
-            android:background="@drawable/nav_item_bg"
-            android:text="@string/tab_reviews"
-            android:textColor="@color/nav_text"
-            android:textSize="13sp"
-            android:textAllCaps="false" />
+            android:gravity="center"
+            android:orientation="vertical"
+            android:background="?android:attr/selectableItemBackground">
 
-        <View
-            android:layout_width="1dp"
-            android:layout_height="match_parent"
-            android:background="#E0E0E0" />
+            <TextView
+                android:id="@+id/tabRouteIcon"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="🧭"
+                android:textSize="18sp" />
 
-        <Button
-            android:id="@+id/navRoute"
+            <TextView
+                android:id="@+id/tabRouteText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Directions"
+                android:textColor="#5F6368"
+                android:textSize="11sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/tabReviewsLayout"
             android:layout_width="0dp"
-            android:layout_weight="1"
             android:layout_height="match_parent"
-            android:background="@drawable/nav_item_bg"
-            android:text="@string/tab_route"
-            android:textColor="@color/nav_text"
-            android:textSize="13sp"
-            android:textAllCaps="false" />
+            android:layout_weight="1"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:background="?android:attr/selectableItemBackground">
+
+            <TextView
+                android:id="@+id/tabReviewsIcon"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="⭐"
+                android:textSize="18sp" />
+
+            <TextView
+                android:id="@+id/tabReviewsText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Reviews"
+                android:textColor="#5F6368"
+                android:textSize="11sp" />
+        </LinearLayout>
 
     </LinearLayout>
 

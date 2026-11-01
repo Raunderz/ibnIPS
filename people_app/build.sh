@@ -25,7 +25,11 @@ echo ""
 if [[ "$MODE" == "release" ]]; then
     echo -e "${BOLD}Building release APK (R8 shrinking)...${RESET}"
     ./gradlew clean assembleRelease --no-daemon
-    APK="app/build/outputs/apk/release/app-release.apk"
+    if [[ -f "app/build/outputs/apk/release/app-release.apk" ]]; then
+        APK="app/build/outputs/apk/release/app-release.apk"
+    else
+        APK="app/build/outputs/apk/release/app-release-unsigned.apk"
+    fi
 else
     echo -e "${BOLD}Building debug APK...${RESET}"
     ./gradlew assembleDebug --no-daemon
